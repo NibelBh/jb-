@@ -1,0 +1,53 @@
+.button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 44px;
+  padding: 0 1rem 0 0.875rem;
+  border: 1.5px solid var(--cream-400);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--brown-900);
+  font-weight: 600;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.button:hover {
+  border-color: var(--brown-700);
+}
+
+.button svg {
+  width: 22px;
+  height: 22px;
+}
+
+.badge {
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--green-700);
+  color: var(--cream-50);
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 520px) {
+  .button {
+    padding: 0 0.75rem;
+  }
+
+  .text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+}

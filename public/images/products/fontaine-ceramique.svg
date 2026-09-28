@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" role="img" aria-label="Fontaine en céramique 2,5 L">
+  <ellipse cx="400" cy="690" rx="250" ry="24" fill="#3b281c" opacity=".12"/>
+  <path d="M170 452q8 222 230 222t230-222Z" fill="#5b8963"/>
+  <path d="M560 452h70q-6 200-196 220q150-50 126-220Z" fill="#436d4c"/>
+  <path d="M226 510q20 90 96 132" stroke="#fff" stroke-width="16" stroke-linecap="round" fill="none" opacity=".35"/>
+  <ellipse cx="400" cy="452" rx="232" ry="52" fill="#6f9c76"/>
+  <ellipse cx="400" cy="452" rx="206" ry="38" fill="#cfe7de"/>
+  <path d="M470 446V300q0-34 34-34h32q34 0 34 34v140q-50 16-100 6Z" fill="#5b8963"/>
+  <path d="M548 290v140" stroke="#436d4c" stroke-width="14" stroke-linecap="round"/>
+  <path d="M486 300q0-18 18-18" stroke="#fff" stroke-width="9" stroke-linecap="round" fill="none" opacity=".45"/>
+  <path d="M474 312l-56 16a8 8 0 0 0 2 16l56-8Z" fill="#436d4c"/>
+  <path d="M424 336q-22 50-14 110" stroke="#bfe0d3" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <path d="M424 350q-10 30-8 60" stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none" opacity=".8"/>
+  <ellipse cx="410" cy="452" rx="36" ry="9" fill="none" stroke="#fff" stroke-width="5"/>
+  <ellipse cx="410" cy="452" rx="64" ry="15" fill="none" stroke="#fff" stroke-width="3" opacity=".6"/>
+  <path d="M250 450q40-18 90-20" stroke="#fff" stroke-width="6" stroke-linecap="round" fill="none" opacity=".8"/>
+</svg>

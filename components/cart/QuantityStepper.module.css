@@ -1,0 +1,49 @@
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  height: 48px;
+  border: 1.5px solid var(--cream-400);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+}
+
+.stepper[data-size='sm'] {
+  height: 38px;
+}
+
+.button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--brown-800);
+}
+
+.stepper[data-size='sm'] .button {
+  width: 36px;
+}
+
+.button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--cream-200);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.value {
+  min-width: 2ch;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}

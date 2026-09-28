@@ -1,0 +1,40 @@
+.nav {
+  font-size: 0.875rem;
+}
+
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-muted);
+}
+
+.list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.list li + li::before {
+  content: '/';
+  color: var(--cream-400);
+}
+
+.list a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.list a:hover {
+  color: var(--brown-900);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.list [aria-current='page'] {
+  color: var(--brown-900);
+  font-weight: 500;
+}

@@ -1,0 +1,42 @@
+import type { SVGProps } from 'react';
+
+/** Tête de chat tigré utilisée pour le logo, le favicon et les illustrations. */
+export function CatHead() {
+  return (
+    <>
+      <path
+        d="M10.5 6.5c2-.5 10.5 6 14 10 5-1.5 10-1.5 15 0 3.5-4 12-10.5 14-10 2 .5 2.5 3 2.5 5l.5 13.5c3 5 4 11 2.5 17-2.5 10.5-13 16.5-27 16.5S7.5 52.5 5 42c-1.5-6-.5-12 2.5-17L8 11.5c0-2 .5-4.5 2.5-5Z"
+        fill="#6e4a33"
+      />
+      <path d="M11.5 11c2.5 1 7 4 9.5 6.5L12 23Z" fill="#a8805f" />
+      <path d="M52.5 11c-2.5 1-7 4-9.5 6.5L52 23Z" fill="#a8805f" />
+      <g stroke="#2a1c13" strokeWidth={2.6} strokeLinecap="round" fill="none">
+        <path d="M32 17.5V25M26 18.5q1.5 3.5 1.5 7M38 18.5q-1.5 3.5-1.5 7" />
+        <path d="M5.5 37H12M6.5 43l6-1.5M58.5 37H52M57.5 43l-6-1.5" />
+      </g>
+      <path d="M17 36q5.5-6 11 0-5.5 5.5-11 0ZM36 36q5.5-6 11 0-5.5 5.5-11 0Z" fill="#a7c3a3" />
+      <ellipse cx="22.5" cy="36" rx="1.5" ry="3.6" fill="#2a1c13" />
+      <ellipse cx="41.5" cy="36" rx="1.5" ry="3.6" fill="#2a1c13" />
+      <path d="M32 43c6 0 10 3 10 6.5S37.5 55 32 55s-10-2-10-5.5S26 43 32 43Z" fill="#faf5ec" />
+      <path
+        d="M29.6 45.2h4.8c.5 0 .7.5.4.9l-2.3 2.4a.7.7 0 0 1-1 0l-2.3-2.4c-.3-.4-.1-.9.4-.9Z"
+        fill="#8b6144"
+      />
+      <path
+        d="M32 48.6V50m0 0q-1.5 2-3.5 1m3.5-1q1.5 2 3.5 1"
+        stroke="#563826"
+        strokeWidth={1.3}
+        strokeLinecap="round"
+        fill="none"
+      />
+    </>
+  );
+}
+
+export function LogoMark(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false" {...props}>
+      <CatHead />
+    </svg>
+  );
+}

@@ -1,0 +1,36 @@
+.nav {
+  margin-top: 1.75rem;
+}
+
+.list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 1.125rem;
+  border: 1.5px solid var(--cream-400);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--brown-800);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.pill:hover {
+  border-color: var(--brown-700);
+}
+
+.pill[aria-current='page'] {
+  border-color: var(--green-700);
+  background: var(--green-700);
+  color: var(--cream-50);
+}

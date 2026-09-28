@@ -1,0 +1,14 @@
+.row {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.button {
+  flex: 1;
+}
+
+@media (max-width: 380px) {
+  .row {
+    flex-direction: column;
+  }
+}

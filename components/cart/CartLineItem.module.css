@@ -1,0 +1,81 @@
+.line {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 1rem;
+  padding-block: 1.125rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.thumb {
+  display: block;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--cream-200);
+}
+
+.thumb img {
+  width: 100%;
+  height: auto;
+}
+
+.body {
+  min-width: 0;
+}
+
+.top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.name {
+  color: var(--brown-900);
+  font-weight: 600;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.name:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.total {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.unit {
+  margin-top: 0.125rem;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.625rem;
+}
+
+.remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0;
+  border: 0;
+  background: none;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.remove svg {
+  width: 18px;
+  height: 18px;
+}
+
+.remove:hover {
+  color: var(--color-danger);
+}

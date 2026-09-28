@@ -1,0 +1,9 @@
+.groups {
+  display: grid;
+  gap: 3rem;
+}
+
+.title {
+  margin-bottom: 0.75rem;
+  font-size: 1.625rem;
+}

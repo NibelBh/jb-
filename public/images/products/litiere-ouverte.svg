@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" role="img" aria-label="Litière autonettoyante Ouverte">
+  <ellipse cx="400" cy="690" rx="320" ry="24" fill="#3b281c" opacity=".12"/>
+  <rect x="520" y="318" width="190" height="352" rx="44" fill="#563826"/>
+  <rect x="504" y="296" width="222" height="54" rx="27" fill="#6e4a33"/>
+  <rect x="580" y="312" width="70" height="12" rx="6" fill="#8b6144"/>
+  <circle cx="615" cy="420" r="10" fill="#a7c3a3"/>
+  <path d="M104 452q220-66 440 0Z" fill="#d6c1a2"/>
+  <circle cx="200" cy="438" r="7" fill="#c7a78a"/>
+  <circle cx="330" cy="420" r="6" fill="#c7a78a"/>
+  <circle cx="450" cy="432" r="7" fill="#c7a78a"/>
+  <rect x="96" y="296" width="26" height="170" rx="13" fill="#563826"/>
+  <rect x="92" y="286" width="440" height="24" rx="12" fill="#563826"/>
+  <rect x="236" y="272" width="84" height="52" rx="18" fill="#35573d"/>
+  <rect x="266" y="318" width="24" height="128" rx="10" fill="#35573d"/>
+  <path d="M244 446h68" stroke="#35573d" stroke-width="16" stroke-linecap="round"/>
+  <path d="M252 452v20M270 452v20M288 452v20M306 452v20" stroke="#35573d" stroke-width="8" stroke-linecap="round"/>
+  <path d="M100 462h460v142a54 54 0 0 1-54 54H154a54 54 0 0 1-54-54Z" fill="#fffdf8"/>
+  <rect x="520" y="480" width="26" height="160" rx="13" fill="#efe6d8"/>
+  <rect x="86" y="446" width="488" height="34" rx="17" fill="#efe6d8"/>
+  <path d="M130 520q6 70 60 100" stroke="#fff" stroke-width="14" stroke-linecap="round" fill="none"/>
+</svg>

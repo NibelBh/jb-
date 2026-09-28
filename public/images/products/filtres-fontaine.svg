@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" role="img" aria-label="Filtres pour fontaine">
+  <defs>
+    <pattern id="mesh" width="18" height="18" patternUnits="userSpaceOnUse">
+      <rect width="18" height="18" fill="#3b281c"/>
+      <circle cx="9" cy="9" r="3.2" fill="#563826"/>
+    </pattern>
+    <pattern id="beads" width="22" height="22" patternUnits="userSpaceOnUse">
+      <rect width="22" height="22" fill="#cddfc8"/>
+      <circle cx="6" cy="6" r="4.5" fill="#a7c3a3"/>
+      <circle cx="17" cy="16" r="4.5" fill="#a7c3a3"/>
+    </pattern>
+    <g id="cartridge">
+      <rect x="-110" y="-190" width="220" height="380" rx="34" fill="#fffdf8"/>
+      <rect x="-86" y="-160" width="172" height="90" rx="16" fill="url(#beads)"/>
+      <rect x="-86" y="-56" width="172" height="220" rx="16" fill="url(#mesh)"/>
+      <rect x="-40" y="-212" width="80" height="34" rx="12" fill="#35573d"/>
+      <rect x="84" y="-150" width="12" height="300" rx="6" fill="#efe6d8"/>
+    </g>
+  </defs>
+  <ellipse cx="400" cy="694" rx="290" ry="24" fill="#3b281c" opacity=".12"/>
+  <use href="#cartridge" transform="translate(250 450) rotate(-14)"/>
+  <use href="#cartridge" transform="translate(550 450) rotate(14)"/>
+  <use href="#cartridge" transform="translate(400 430)"/>
+</svg>

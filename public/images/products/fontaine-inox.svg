@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" role="img" aria-label="Fontaine à eau Inox 2 L">
+  <ellipse cx="400" cy="690" rx="240" ry="24" fill="#3b281c" opacity=".12"/>
+  <path d="M184 430h432l-26 216q-4 36-40 36H250q-36 0-40-36Z" fill="#fffdf8"/>
+  <path d="M560 430h56l-26 216q-4 36-40 36h-40q34 0 38-36Z" fill="#efe6d8"/>
+  <path d="M196 530h408l-5 40H201Z" fill="#cddfc8"/>
+  <circle cx="400" cy="624" r="9" fill="#5b8963"/>
+  <ellipse cx="400" cy="430" rx="218" ry="64" fill="#e7d9c3"/>
+  <ellipse cx="400" cy="424" rx="198" ry="52" fill="#cfe7de"/>
+  <path d="M250 424q30-22 70-26M480 398q42 4 72 26" stroke="#fff" stroke-width="6" stroke-linecap="round" fill="none" opacity=".8"/>
+  <ellipse cx="400" cy="404" rx="126" ry="36" fill="#bdb6ab"/>
+  <ellipse cx="400" cy="398" rx="110" ry="28" fill="#e9e6e0"/>
+  <path d="M322 392q30-14 70-16" stroke="#fff" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <ellipse cx="400" cy="394" rx="40" ry="11" fill="#bfe0d3"/>
+  <path d="M370 394q30-52 60 0Z" fill="#bfe0d3"/>
+  <path d="M392 368q8-8 18-4" stroke="#fff" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <circle cx="352" cy="352" r="7" fill="#bfe0d3"/>
+  <circle cx="452" cy="340" r="5" fill="#bfe0d3"/>
+</svg>

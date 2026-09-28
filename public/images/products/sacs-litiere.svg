@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" role="img" aria-label="Sacs pour litière autonettoyante">
+  <ellipse cx="410" cy="690" rx="260" ry="24" fill="#3b281c" opacity=".12"/>
+  <path d="M200 380l64-34h356l-64 34Z" fill="#b8936f"/>
+  <path d="M226 372l46-20h330l-46 20Z" fill="#8b6144"/>
+  <g>
+    <rect x="236" y="288" width="92" height="140" fill="#5b8963"/>
+    <ellipse cx="282" cy="288" rx="46" ry="14" fill="#a7c3a3"/>
+    <ellipse cx="282" cy="288" rx="14" ry="5" fill="#35573d"/>
+    <rect x="340" y="258" width="92" height="170" fill="#436d4c"/>
+    <ellipse cx="386" cy="258" rx="46" ry="14" fill="#8fb38e"/>
+    <ellipse cx="386" cy="258" rx="14" ry="5" fill="#29432f"/>
+    <rect x="444" y="298" width="92" height="130" fill="#5b8963"/>
+    <ellipse cx="490" cy="298" rx="46" ry="14" fill="#a7c3a3"/>
+    <ellipse cx="490" cy="298" rx="14" ry="5" fill="#35573d"/>
+  </g>
+  <path d="M556 380l64-34v266l-64 62Z" fill="#a8805f"/>
+  <rect x="200" y="380" width="356" height="294" rx="18" fill="#c7a78a"/>
+  <path d="M200 400q0-20 20-20h336v34H200Z" fill="#b8936f"/>
+  <rect x="262" y="450" width="232" height="164" rx="22" fill="#fffdf8"/>
+  <path d="M378 480c-12 0-24 14-24 26 0 7 5 11 12 11 5 0 7-2 12-2s7 2 12 2c7 0 12-4 12-11 0-12-12-26-24-26Z" fill="#35573d"/>
+  <ellipse cx="354" cy="478" rx="8" ry="10" fill="#35573d"/>
+  <ellipse cx="370" cy="462" rx="8" ry="10" fill="#35573d"/>
+  <ellipse cx="386" cy="462" rx="8" ry="10" fill="#35573d"/>
+  <ellipse cx="402" cy="478" rx="8" ry="10" fill="#35573d"/>
+  <text x="378" y="584" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="52" font-weight="700" fill="#3b281c">x60</text>
+</svg>

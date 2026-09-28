@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" role="img" aria-label="Litière autonettoyante Compacte">
+  <defs>
+    <clipPath id="door"><rect x="292" y="350" width="216" height="168" rx="84"/></clipPath>
+  </defs>
+  <ellipse cx="400" cy="704" rx="250" ry="24" fill="#3b281c" opacity=".12"/>
+  <rect x="238" y="660" width="64" height="30" rx="12" fill="#2a1c13"/>
+  <rect x="498" y="660" width="64" height="30" rx="12" fill="#2a1c13"/>
+  <rect x="186" y="200" width="428" height="474" rx="74" fill="#fffdf8"/>
+  <rect x="566" y="250" width="30" height="390" rx="15" fill="#efe6d8"/>
+  <path d="M186 312v-38a74 74 0 0 1 74-74h280a74 74 0 0 1 74 74v38Z" fill="#35573d"/>
+  <rect x="330" y="232" width="140" height="14" rx="7" fill="#436d4c"/>
+  <circle cx="556" cy="258" r="11" fill="#cddfc8"/>
+  <path d="M214 280q10-40 60-50" stroke="#5b8963" stroke-width="12" stroke-linecap="round" fill="none"/>
+  <rect x="274" y="332" width="252" height="204" rx="102" fill="#e7d9c3"/>
+  <rect x="292" y="350" width="216" height="168" rx="84" fill="#3b281c"/>
+  <g clip-path="url(#door)">
+    <path d="M280 470q60-30 120-30t120 30v60H280Z" fill="#d6c1a2"/>
+  </g>
+  <rect x="226" y="566" width="348" height="78" rx="24" fill="#563826"/>
+  <rect x="354" y="594" width="92" height="16" rx="8" fill="#a8805f"/>
+</svg>
