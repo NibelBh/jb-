@@ -17,6 +17,11 @@ export function EmployeeFields({ employee }: { employee?: EmployeeRow }) {
           <input id="last_name" name="last_name" className="input" defaultValue={employee?.last_name} required />
         </div>
         <div className="field">
+          <label htmlFor="payroll_id">Matricule paie</label>
+          <input id="payroll_id" name="payroll_id" className="input mono" defaultValue={employee?.payroll_id ?? ''} />
+          <span className="hint">Le même que dans votre logiciel de paie : il sert aux fichiers de paie.</span>
+        </div>
+        <div className="field">
           <label htmlFor="phone">Téléphone</label>
           <input id="phone" name="phone" type="tel" className="input" defaultValue={employee?.phone ?? ''} />
         </div>

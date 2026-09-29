@@ -6,7 +6,7 @@ import { getDb } from '@/lib/db';
 import { addAbsence, addRoute, assignRoute, deleteAbsence, deleteRoute, importRoutes, setDayStatus } from '@/lib/data/planning';
 import { parisDate } from '@/lib/domain/dates';
 import { ABSENCE_TYPES, DAY_STATUSES } from '@/lib/domain/labels';
-import { type FormState, date, id, oneOf, optId, optText, text, toFormState } from '@/lib/forms';
+import { type FormState, csvInput, date, id, oneOf, optId, optText, text, toFormState } from '@/lib/forms';
 
 function done(message?: string): FormState {
   revalidatePath('/planning');
@@ -59,18 +59,14 @@ export async function importRoutesAction(_: FormState, formData: FormData): Prom
   try {
     const ctx = await requireAction('planning.modifier');
     const day = date(formData, 'day', 'Jour');
-    let content = String(formData.get('csv') ?? '');
-    const file = formData.get('file');
-    if (file && typeof file === 'object' && 'text' in file && file.size > 0) {
-      if (file.size > 1024 * 1024) return { error: 'Fichier trop lourd (1 Mo maximum).' };
-      content = await file.text();
-    }
-    if (!content.trim()) return { error: 'Collez le contenu du fichier ou choisissez un fichier CSV.' };
+    const content = await csvInput(formData);
     const report = importRoutes(getDb(), ctx, day, content);
-    if (report.created + report.updated === 0 && report.errors.length > 0) return { error: report.errors.join(' ') };
+    if (report.created + report.updated === 0 && report.errors.length > 0) return { error: 'Aucune tournée importée.', details: report.errors };
     done();
-    const summary = `${report.created} tournée(s) créée(s), ${report.updated} mise(s) à jour, ${report.assigned} affectation(s).`;
-    return { ok: report.errors.length ? `${summary} À vérifier : ${report.errors.join(' ')}` : summary };
+    return {
+      ok: `${report.created} tournée(s) créée(s), ${report.updated} mise(s) à jour, ${report.assigned} affectation(s).`,
+      details: report.errors,
+    };
   } catch (error) {
     return toFormState(error);
   }

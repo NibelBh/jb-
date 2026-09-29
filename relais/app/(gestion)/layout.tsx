@@ -17,6 +17,8 @@ const NAV: { module: Module; href: string; label: string }[] = [
   { module: 'dommages', href: '/dommages', label: 'Dommages' },
   { module: 'amendes', href: '/amendes', label: 'Amendes' },
   { module: 'documents', href: '/documents', label: 'Documents' },
+  { module: 'paie', href: '/paie', label: 'Paie' },
+  { module: 'imports', href: '/imports', label: 'Imports CSV' },
   { module: 'journal', href: '/journal', label: 'Journal' },
   { module: 'parametres', href: '/parametres', label: 'Paramètres' },
 ];

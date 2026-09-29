@@ -17,6 +17,7 @@ function employeeInput(formData: FormData): EmployeeInput {
     .filter((c) => /^(AM|A1|A2|A|B|BE|B96|C1|C1E|C|CE|D1|D1E|D|DE)$/.test(c));
   const contract = String(formData.get('contract_type') ?? '');
   return {
+    payroll_id: optText(formData, 'payroll_id', 30),
     first_name: text(formData, 'first_name', 'Prénom', 80),
     last_name: text(formData, 'last_name', 'Nom', 80),
     email: optText(formData, 'email', 120),
@@ -37,7 +38,9 @@ export async function createEmployeeAction(_: FormState, formData: FormData): Pr
   let newId: number;
   try {
     const ctx = await requireAction('personnel.modifier');
-    newId = createEmployee(getDb(), ctx, employeeInput(formData));
+    const result = createEmployee(getDb(), ctx, employeeInput(formData));
+    if (result.error || result.id === undefined) return { error: result.error ?? 'Création impossible.' };
+    newId = result.id;
   } catch (error) {
     return toFormState(error);
   }

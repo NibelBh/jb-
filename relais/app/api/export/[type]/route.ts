@@ -34,8 +34,9 @@ const EXPORTS: Record<string, { module: Module; build: (orgId: number) => string
     module: 'personnel',
     build: (orgId) =>
       toCsv(
-        ['Nom', 'Prénom', 'Poste', 'Statut', 'Téléphone', 'E-mail', 'Embauche', 'Sortie', 'Catégories permis', 'Fin de validité permis'],
+        ['Matricule', 'Nom', 'Prénom', 'Poste', 'Statut', 'Téléphone', 'E-mail', 'Embauche', 'Sortie', 'Catégories permis', 'Fin de validité permis'],
         listEmployees(getDb(), orgId, { includeLeft: true }).map((e) => [
+          e.payroll_id,
           e.last_name,
           e.first_name,
           labelOf(POSITIONS, e.position),

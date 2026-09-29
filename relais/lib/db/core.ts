@@ -289,6 +289,56 @@ const MIGRATIONS: string[] = [
   CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit_log
   BEGIN SELECT RAISE(ABORT, 'audit_log est en ajout seul'); END;
   `,
+  // 2 : paie. Matricule du salarié, codes rubriques du logiciel de paie,
+  // éléments variables saisis à la main, journal de paie importé, historique des exports.
+  `
+  ALTER TABLE employees ADD COLUMN payroll_id TEXT;
+  CREATE UNIQUE INDEX employees_payroll_id ON employees(org_id, payroll_id) WHERE payroll_id IS NOT NULL;
+
+  CREATE TABLE payroll_codes (
+    org_id INTEGER NOT NULL REFERENCES organizations(id),
+    variable TEXT NOT NULL,
+    code TEXT NOT NULL,
+    PRIMARY KEY (org_id, variable)
+  );
+
+  CREATE TABLE payroll_items (
+    id INTEGER PRIMARY KEY,
+    org_id INTEGER NOT NULL REFERENCES organizations(id),
+    employee_id INTEGER NOT NULL REFERENCES employees(id),
+    period TEXT NOT NULL,
+    variable TEXT NOT NULL,
+    value REAL NOT NULL,
+    note TEXT,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  );
+  CREATE INDEX payroll_items_period ON payroll_items(org_id, period);
+
+  CREATE TABLE payroll_entries (
+    id INTEGER PRIMARY KEY,
+    org_id INTEGER NOT NULL REFERENCES organizations(id),
+    employee_id INTEGER NOT NULL REFERENCES employees(id),
+    period TEXT NOT NULL,
+    gross_cents INTEGER NOT NULL,
+    net_cents INTEGER,
+    employer_cost_cents INTEGER NOT NULL,
+    source TEXT,
+    imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    UNIQUE (org_id, employee_id, period)
+  );
+
+  CREATE TABLE payroll_exports (
+    id INTEGER PRIMARY KEY,
+    org_id INTEGER NOT NULL REFERENCES organizations(id),
+    period TEXT NOT NULL,
+    format TEXT NOT NULL,
+    rows INTEGER NOT NULL,
+    user_id INTEGER REFERENCES users(id),
+    actor TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  );
+  `,
 ];
 
 export function openDatabase(location: string): Db {
@@ -333,14 +383,33 @@ export function run(db: Db, sql: string, ...params: Param[]): { id: number; chan
   return { id: Number(result.lastInsertRowid), changes: Number(result.changes) };
 }
 
-export function transaction<T>(db: Db, fn: () => T): T {
-  db.exec('BEGIN');
+// Profondeur de transaction par connexion : les transactions imbriquées deviennent des SAVEPOINT.
+const depths = new WeakMap<Db, number>();
+
+function scoped<T>(db: Db, fn: () => T, keep: boolean): T {
+  const depth = depths.get(db) ?? 0;
+  const savepoint = `sp_${depth}`;
+  db.exec(depth === 0 ? 'BEGIN' : `SAVEPOINT ${savepoint}`);
+  depths.set(db, depth + 1);
+  const rollback = () => db.exec(depth === 0 ? 'ROLLBACK' : `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`);
   try {
     const value = fn();
-    db.exec('COMMIT');
+    if (keep) db.exec(depth === 0 ? 'COMMIT' : `RELEASE ${savepoint}`);
+    else rollback();
     return value;
   } catch (error) {
-    db.exec('ROLLBACK');
+    rollback();
     throw error;
+  } finally {
+    depths.set(db, depth);
   }
+}
+
+export function transaction<T>(db: Db, fn: () => T): T {
+  return scoped(db, fn, true);
+}
+
+/** Exécute `fn` puis annule tout : sert à vérifier un import sans rien enregistrer. */
+export function dryRun<T>(db: Db, fn: () => T): T {
+  return scoped(db, fn, false);
 }

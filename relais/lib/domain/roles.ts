@@ -22,6 +22,8 @@ export const MODULES = [
   'dommages',
   'amendes',
   'documents',
+  'paie',
+  'imports',
   'journal',
   'parametres',
 ] as const;
@@ -37,6 +39,8 @@ const ACCESS: Record<Module, Role[]> = {
   dommages: ['admin', 'flotte', 'compta'],
   amendes: ['admin', 'flotte', 'compta'],
   documents: ['admin', 'flotte', 'rh'],
+  paie: ['admin', 'rh', 'compta'],
+  imports: ['admin', 'rh', 'flotte'],
   journal: ['admin'],
   parametres: ['admin'],
 };
@@ -53,6 +57,7 @@ const ACTIONS = {
   'amende.modifier': ['admin', 'flotte', 'compta'],
   'document.modifier': ['admin', 'flotte', 'rh'],
   'utilisateur.gerer': ['admin'],
+  'paie.gerer': ['admin', 'rh', 'compta'],
 } as const satisfies Record<string, Role[]>;
 
 export type Action = keyof typeof ACTIONS;

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { type Db, get, openDatabase } from './core';
 import { seedDemo } from './seed';
 
-export { all, get, run, transaction } from './core';
+export { all, dryRun, get, run, transaction } from './core';
 export type { Db, Param } from './core';
 
 export const DATA_DIR = process.env.RELAIS_DATA_DIR ?? path.join(process.cwd(), 'data');

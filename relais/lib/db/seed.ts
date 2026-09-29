@@ -54,13 +54,14 @@ export function seedDemo(db: Db, today = parisDate()): void {
     for (const e of EMPLOYEES) {
       const id = run(
         db,
-        `INSERT INTO employees (org_id, first_name, last_name, email, phone, position, contract_type, status, hired_on,
+        `INSERT INTO employees (org_id, payroll_id, first_name, last_name, email, phone, position, contract_type, status, hired_on,
            licence_number, licence_categories, licence_expires_on, licence_checked_on)
-         VALUES (?, ?, ?, ?, ?, ?, 'cdi', 'actif', ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'cdi', 'actif', ?, ?, ?, ?, ?)`,
         org,
+        `M${String(employeeIds.length + 1).padStart(3, '0')}`,
         e.first,
         e.last,
-        `${e.first.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')}@exemple.fr`,
+        `${e.first.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}@exemple.fr`,
         `06 00 00 00 ${String(employeeIds.length + 10).padStart(2, '0')}`,
         e.position,
         addDays(today, -200 - employeeIds.length * 37),

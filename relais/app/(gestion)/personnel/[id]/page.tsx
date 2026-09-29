@@ -42,7 +42,7 @@ export default async function EmployeePage(props: PageProps<'/personnel/[id]'>) 
   const suggestedLogin = employee.first_name
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]/g, '');
 
   return (
@@ -71,6 +71,8 @@ export default async function EmployeePage(props: PageProps<'/personnel/[id]'>) 
           </div>
           <div className="card-body">
             <dl className="kv">
+              <dt>Matricule paie</dt>
+              <dd className="mono">{employee.payroll_id || 'Non renseigné'}</dd>
               <dt>Téléphone</dt>
               <dd>{employee.phone ? <a href={`tel:${employee.phone.replace(/\s/g, '')}`}>{employee.phone}</a> : '·'}</dd>
               <dt>E-mail</dt>

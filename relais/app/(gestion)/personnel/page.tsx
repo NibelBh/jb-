@@ -47,6 +47,7 @@ export default async function StaffPage(props: PageProps<'/personnel'>) {
           <thead>
             <tr>
               <th>Nom</th>
+              <th>Matricule</th>
               <th>Poste</th>
               <th>Statut</th>
               <th>Permis</th>
@@ -62,6 +63,7 @@ export default async function StaffPage(props: PageProps<'/personnel'>) {
                     {e.last_name.toUpperCase()} {e.first_name}
                   </Link>
                 </td>
+                <td className="mono small">{e.payroll_id ?? ''}</td>
                 <td>{labelOf(POSITIONS, e.position)}</td>
                 <td>
                   <span className={`badge ${e.status === 'sorti' ? 'badge-soft' : e.status === 'suspendu' ? 'badge-red' : ''}`}>{labelOf(EMPLOYEE_STATUSES, e.status)}</span>

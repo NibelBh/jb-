@@ -1,0 +1,16 @@
+{
+  // Version de test de Relais dans GitHub Codespaces : installe, lance l'application
+  // et ouvre la page de connexion dans un nouvel onglet. Données de démonstration incluses.
+  "name": "Relais (démo)",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "hostRequirements": { "cpus": 2 },
+  "postCreateCommand": "cd relais && npm ci && npm run build",
+  "postAttachCommand": "cd relais && npm start",
+  "forwardPorts": [3100],
+  "portsAttributes": {
+    "3100": { "label": "Relais", "onAutoForward": "openBrowser" }
+  },
+  "customizations": {
+    "codespaces": { "openFiles": ["relais/README.md"] }
+  }
+}

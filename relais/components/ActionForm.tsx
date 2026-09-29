@@ -63,6 +63,13 @@ export function ActionForm({
           {state.ok}
         </p>
       )}
+      {state?.details && state.details.length > 0 && (
+        <ul className="small" style={{ margin: 0, paddingLeft: 18, maxHeight: 200, overflowY: 'auto' }}>
+          {state.details.map((d, i) => (
+            <li key={`${i}-${d}`}>{d}</li>
+          ))}
+        </ul>
+      )}
       <div className="btn-row">
         <button type="submit" className={submitClassName} disabled={pending}>
           {pending ? pendingLabel : submitLabel}

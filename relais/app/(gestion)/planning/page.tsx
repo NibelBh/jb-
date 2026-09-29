@@ -339,7 +339,11 @@ export default async function PlanningPage(props: PageProps<'/planning'>) {
                   <ActionForm action={importRoutesAction} submitLabel="Importer" pendingLabel="Import…">
                     <input type="hidden" name="day" value={day} />
                     <p className="small muted">
-                      Colonnes reconnues : <code>tournee</code> (obligatoire), <code>heure</code>, <code>client</code>, <code>agence</code>, <code>chauffeur</code> (nom ou identifiant), <code>vehicule</code>. Séparateur <code>;</code> ou <code>,</code>.
+                      Colonnes reconnues : <code>tournee</code> (obligatoire), <code>heure</code>, <code>client</code>, <code>agence</code>, <code>chauffeur</code> (nom ou identifiant), <code>vehicule</code>. Séparateur <code>;</code> ou <code>,</code>.{' '}
+                      <a href="/api/modeles/tournees" download>
+                        Télécharger le modèle
+                      </a>
+                      .
                     </p>
                     <div className="field">
                       <label htmlFor="imp-file">Fichier CSV</label>

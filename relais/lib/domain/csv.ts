@@ -69,8 +69,21 @@ export function toCsv(header: string[], rows: (string | number | null | undefine
 export function normalizeHeader(value: string): string {
   return value
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_|_$/g, '');
+}
+
+/**
+ * Décode un fichier CSV. Excel sous Windows enregistre souvent en Windows-1252
+ * (« CSV (séparateur : point-virgule) ») : si le fichier n'est pas de l'UTF-8 valide,
+ * on le relit dans cet encodage pour garder les accents.
+ */
+export function decodeCsvBytes(bytes: Uint8Array): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder('windows-1252').decode(bytes);
+  }
 }
