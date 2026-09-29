@@ -1,0 +1,3 @@
+# Lanceurs de Relais : fins de ligne Windows pour .bat, Unix pour .command.
+*.bat -text
+*.command text eol=lf
