@@ -29,6 +29,14 @@ export const REQUIRED_PHOTOS = [
   { key: 'compteur', label: 'Compteur kilométrique' },
 ] as const;
 
+/** État de fin de journée : quatre faces obligatoires (le compteur reste conseillé). */
+export const END_OF_DAY_PHOTOS = REQUIRED_PHOTOS.filter((p) => p.key !== 'compteur');
+
+/** Libellés des photos obligatoires qui manquent. */
+export function missingPhotos(photos: Record<string, number>, required: readonly { key: string; label: string }[]): string[] {
+  return required.filter((p) => !photos[p.key]).map((p) => p.label);
+}
+
 export type InspectionAnswers = Record<ChecklistKey, { result: ItemResult; note: string }>;
 
 export function worstResult(answers: Partial<InspectionAnswers>): ItemResult {

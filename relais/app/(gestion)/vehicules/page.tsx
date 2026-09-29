@@ -7,11 +7,12 @@ import { requireModule } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { listDeadlines } from '@/lib/data/documents';
 import { listVehicles } from '@/lib/data/vehicles';
-import { parisDate } from '@/lib/domain/dates';
+import { formatDate, parisDate } from '@/lib/domain/dates';
 import { needsAttention } from '@/lib/domain/documents';
 import { formatKm } from '@/lib/domain/inspection';
 import { ENERGIES, labelOf } from '@/lib/domain/labels';
 import { can } from '@/lib/domain/roles';
+import { vehicleCompliance } from '@/lib/domain/vehicles';
 
 export const metadata: Metadata = { title: 'Véhicules' };
 
@@ -52,12 +53,15 @@ export default async function VehiclesPage(props: PageProps<'/vehicules'>) {
               <th>Statut</th>
               <th>Chauffeur actuel</th>
               <th className="num">Kilométrage</th>
-              <th>Alertes</th>
+              <th>Assurance</th>
+              <th>Contrôle technique</th>
+              <th>Autres alertes</th>
             </tr>
           </thead>
           <tbody>
             {vehicles.map((v) => {
-              const alerts = deadlines.filter((d) => d.entityId === v.id);
+              const alerts = deadlines.filter((d) => d.entityId === v.id && d.label !== 'Assurance' && d.label !== 'Contrôle technique');
+              const c = vehicleCompliance(v, today);
               return (
                 <tr key={v.id}>
                   <td>
@@ -74,6 +78,14 @@ export default async function VehiclesPage(props: PageProps<'/vehicules'>) {
                   </td>
                   <td>{v.driver_name ?? <span className="muted">Aucun</span>}</td>
                   <td className="num">{formatKm(v.current_km)}</td>
+                  <td className="nowrap">
+                    <ExpiryBadge status={c.insurance} />
+                    {v.insurance_end_on && <div className="small muted">{formatDate(v.insurance_end_on)}</div>}
+                  </td>
+                  <td className="nowrap">
+                    <ExpiryBadge status={c.ct} />
+                    {c.ctDue && <div className="small muted">{formatDate(c.ctDue)}</div>}
+                  </td>
                   <td>
                     <div className="btn-row" style={{ gap: 4 }}>
                       {alerts.map((a) => (

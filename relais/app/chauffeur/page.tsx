@@ -6,7 +6,8 @@ import { requireDriver } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { driverHome } from '@/lib/data/driver';
 import { listNotifications } from '@/lib/data/notifications';
-import { formatDateTime, formatLongDate, formatTime, parisDate } from '@/lib/domain/dates';
+import { formatDateTime, formatLongDate, formatTime, formatWeekday, parisDate } from '@/lib/domain/dates';
+import { formatRange } from '@/lib/domain/shifts';
 import { ABSENCE_TYPES, labelOf } from '@/lib/domain/labels';
 import styles from './driver.module.css';
 
@@ -15,8 +16,8 @@ export const metadata: Metadata = { title: 'Mon espace' };
 const MESSAGES: Record<string, { text: string; red?: boolean }> = {
   parti: { text: 'Bonne tournée ! L’état du véhicule au départ est enregistré avec vos photos.' },
   bloque: { text: 'Problème bloquant signalé. Ne partez pas : votre responsable a été prévenu et va vous répondre.', red: true },
-  rendu: { text: 'Véhicule rendu. Merci et bonne fin de journée.' },
-  rendu_signale: { text: 'Véhicule rendu. Les problèmes signalés ont été transmis au responsable flotte.' },
+  rendu: { text: 'État de fin de journée enregistré, véhicule rendu. Merci et bonne fin de journée.' },
+  rendu_signale: { text: 'État de fin de journée enregistré. Le dégât signalé a été transmis à votre responsable.' },
   signale: { text: 'Signalement envoyé. Votre responsable est prévenu.' },
 };
 
@@ -50,20 +51,24 @@ export default async function DriverHome(props: PageProps<'/chauffeur'>) {
         </section>
       ) : (
         <section className={styles.panel} aria-label="Ma journée">
-          <span className={styles.panelLabel}>Ma tournée</span>
-          {home.plan?.route_code ? (
-            <>
-              <span className={styles.big}>{home.plan.route_code}</span>
-              <span className={styles.muted}>
-                {[home.plan.start_time && `Départ ${home.plan.start_time.replace(':', ' h ')}`, home.plan.client].filter(Boolean).join(' · ')}
-              </span>
-            </>
+          <span className={styles.panelLabel}>Mon planning du jour</span>
+          {home.shifts.length === 0 ? (
+            <span className={styles.muted}>Pas de créneau prévu aujourd’hui.</span>
           ) : (
-            <span className={styles.muted}>{home.plan?.status === 'repos' ? 'Repos aujourd’hui.' : 'Pas de tournée prévue pour l’instant.'}</span>
+            home.shifts.map((s) => (
+              <span key={s.id}>
+                <span className={styles.big}>{formatRange(s.start_time, s.end_time)}</span>{' '}
+                <span className={styles.muted}>
+                  {[s.route_name && `Tournée ${s.route_name}`, s.plate && `véhicule ${s.plate}`, s.status === 'realise' ? 'terminé' : s.status === 'en_cours' ? 'en cours' : null]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              </span>
+            ))
           )}
-          {!home.open && home.plan?.plate && (
-            <span>
-              Véhicule prévu : <span className={styles.plate}>{home.plan.plate}</span>
+          {home.upcoming.length > 0 && (
+            <span className={styles.muted}>
+              Prochains jours : {home.upcoming.slice(0, 5).map((s) => `${formatWeekday(s.day)} ${formatRange(s.start_time, s.end_time)}${s.route_name ? ` (${s.route_name})` : ''}`).join(' ; ')}
             </span>
           )}
         </section>
@@ -90,8 +95,9 @@ export default async function DriverHome(props: PageProps<'/chauffeur'>) {
           </Link>
         </>
       ) : (
-        !home.absence && (
-          <Link href={home.plan?.vehicle_id ? `/chauffeur/prendre?vehicule=${home.plan.vehicle_id}` : '/chauffeur/prendre'} className={styles.primary}>
+        !home.absence &&
+        home.current && (
+          <Link href={home.current.vehicle_id ? `/chauffeur/prendre?vehicule=${home.current.vehicle_id}` : '/chauffeur/prendre'} className={styles.primary}>
             Prendre le véhicule
           </Link>
         )

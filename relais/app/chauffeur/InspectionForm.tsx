@@ -2,7 +2,9 @@
 
 import { startTransition, useActionState, useState } from 'react';
 import { PhotoInput } from '@/components/PhotoInput';
-import { CHECKLIST, type ItemResult, REQUIRED_PHOTOS } from '@/lib/domain/inspection';
+import { ZonePicker } from '@/components/ZonePicker';
+import { CHECKLIST, END_OF_DAY_PHOTOS, type ItemResult, REQUIRED_PHOTOS } from '@/lib/domain/inspection';
+import { SEVERITIES } from '@/lib/domain/labels';
 import type { FormState } from '@/lib/forms';
 import styles from './inspection.module.css';
 
@@ -21,12 +23,17 @@ export function InspectionForm({
   vehicleId,
   lastKm,
   submitLabel,
+  kind = 'depart',
 }: {
   action: (state: FormState, formData: FormData) => Promise<FormState>;
   vehicleId?: number;
   lastKm: number;
   submitLabel: string;
+  /** « retour » : état de fin de journée, quatre faces obligatoires et déclaration d'un nouveau dégât. */
+  kind?: 'depart' | 'retour';
 }) {
+  const [newDamage, setNewDamage] = useState(false);
+  const required = kind === 'retour' ? END_OF_DAY_PHOTOS : REQUIRED_PHOTOS;
   const [state, formAction, pending] = useActionState(action, undefined);
   const [results, setResults] = useState<Record<string, ItemResult>>(() => Object.fromEntries(CHECKLIST.map((c) => [c.key, 'ok'])));
   const problems = Object.values(results).filter((r) => r !== 'ok').length;
@@ -46,11 +53,16 @@ export function InspectionForm({
 
       <fieldset className={styles.block}>
         <legend>1. Photos du véhicule</legend>
-        <p className={styles.help}>Les photos datées prouvent l’état du véhicule quand vous le prenez ou le rendez.</p>
+        <p className={styles.help}>
+          {kind === 'retour'
+            ? 'Quatre photos obligatoires : avant, côté droit, côté gauche, arrière. Elles prouvent l’état du véhicule à la fin de votre journée.'
+            : 'Les photos datées prouvent l’état du véhicule quand vous le prenez.'}
+        </p>
         <div className={styles.photos}>
-          {REQUIRED_PHOTOS.map((p) => (
+          {required.map((p) => (
             <PhotoInput key={p.key} name={`photo_${p.key}`} label={p.label} required />
           ))}
+          {kind === 'retour' && <PhotoInput name="photo_compteur" label="Compteur kilométrique (conseillé)" />}
         </div>
       </fieldset>
 
@@ -94,6 +106,39 @@ export function InspectionForm({
           ))}
         </ul>
       </fieldset>
+
+      {kind === 'retour' && (
+        <fieldset className={styles.block}>
+          <legend>4. Nouveau dégât ?</legend>
+          <label className="checkbox">
+            <input type="checkbox" name="newDamage" checked={newDamage} onChange={(e) => setNewDamage(e.currentTarget.checked)} /> J’ai constaté un nouveau dégât sur le véhicule
+          </label>
+          {newDamage && (
+            <>
+              <ZonePicker name="damageZones" required />
+              <div className="field">
+                <label htmlFor="damageDescription" className={styles.help}>
+                  Description du dégât
+                </label>
+                <textarea id="damageDescription" name="damageDescription" className="input" rows={2} required placeholder="Ex. rayure de 20 cm sur la porte latérale" />
+              </div>
+              <div className="field">
+                <label htmlFor="damageSeverity" className={styles.help}>
+                  Gravité
+                </label>
+                <select id="damageSeverity" name="damageSeverity" className="input" defaultValue="mineur">
+                  {SEVERITIES.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <PhotoInput name="damagePhotos" label="Photo(s) du dégât" multiple required />
+            </>
+          )}
+        </fieldset>
+      )}
 
       <div className="field">
         <label htmlFor="comment" className={styles.help}>

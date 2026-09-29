@@ -138,3 +138,8 @@ export function formatLongDate(isoDate: string): string {
     year: 'numeric',
   }).format(new Date(`${isoDate}T00:00:00Z`));
 }
+
+/** Heure de Paris d'un instant, au format « 08:30 » (pour un champ `time`). */
+export function parisClock(iso: string): string {
+  return new Intl.DateTimeFormat('fr-FR', { timeZone: TIME_ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+}

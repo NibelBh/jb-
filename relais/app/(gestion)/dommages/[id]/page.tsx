@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { ActionForm } from '@/components/ActionForm';
 import { DamageStatusBadge, SeverityBadge } from '@/components/badges';
 import { PageHeader } from '@/components/PageHeader';
+import { VehicleSvg } from '@/components/VehicleMap';
 import { requireModule } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { damageEvents, getDamage } from '@/lib/data/cases';
@@ -11,6 +12,7 @@ import { openImmobilization } from '@/lib/data/vehicles';
 import { formatDateTime } from '@/lib/domain/dates';
 import { DAMAGE_STATUSES, DAMAGE_TYPES, labelOf } from '@/lib/domain/labels';
 import { can } from '@/lib/domain/roles';
+import { parseZones, zonesLabel } from '@/lib/domain/zones';
 import { attachToDamageAction, changeDamageStatusAction, setDamageCostsAction } from '../actions';
 
 export const metadata: Metadata = { title: 'Dossier dommage' };
@@ -58,10 +60,14 @@ export default async function DamagePage(props: PageProps<'/dommages/[id]'>) {
           </div>
           <div className="card-body stack">
             <dl className="kv">
-              <dt>Survenu le</dt>
+              <dt>Date du constat</dt>
               <dd>{formatDateTime(damage.occurred_at)}</dd>
-              <dt>Chauffeur</dt>
+              <dt>Conducteur</dt>
               <dd>{damage.employee_id ? <Link href={`/personnel/${damage.employee_id}`}>{damage.employee_name}</Link> : 'Non renseigné'}</dd>
+              <dt>Déclaré par</dt>
+              <dd>{damage.reporter_name ?? 'Non renseigné'}</dd>
+              <dt>Zones touchées</dt>
+              <dd>{zonesLabel(damage.zones) || 'Non localisé'}</dd>
               <dt>Lieu</dt>
               <dd>
                 {damage.location_text ||
@@ -76,6 +82,11 @@ export default async function DamagePage(props: PageProps<'/dommages/[id]'>) {
               <dt>Véhicule immobilisé</dt>
               <dd>{immobilization ? `Oui, depuis le ${immobilization.started_on.split('-').reverse().join('/')}` : 'Non'}</dd>
             </dl>
+            {damage.zones && (
+              <div style={{ maxWidth: 200 }}>
+                <VehicleSvg selected={parseZones(damage.zones)} label={`Zones touchées : ${zonesLabel(damage.zones)}`} />
+              </div>
+            )}
             <p style={{ whiteSpace: 'pre-wrap' }}>{damage.description}</p>
             {photos.length > 0 && (
               <div className="photos">

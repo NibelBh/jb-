@@ -1,13 +1,16 @@
 import type { EmployeeRow } from '@/lib/data/employees';
 import { CONTRACT_TYPES, EMPLOYEE_STATUSES, POSITIONS } from '@/lib/domain/labels';
 
-const CATEGORIES = ['B', 'BE', 'C1', 'C', 'CE', 'D'];
+const CATEGORIES = ['AM', 'A', 'B', 'BE', 'B96', 'C1', 'C', 'CE', 'D'];
 
 export function EmployeeFields({ employee }: { employee?: EmployeeRow }) {
   const cats = new Set((employee?.licence_categories ?? 'B').split(',').filter(Boolean));
   return (
     <>
-      <div className="form-grid">
+      <fieldset className="form-grid" style={{ border: '1px solid var(--grey-200)', borderRadius: 8, padding: 14 }}>
+        <legend className="small" style={{ fontWeight: 800, padding: '0 6px' }}>
+          Informations personnelles
+        </legend>
         <div className="field">
           <label htmlFor="first_name">Prénom</label>
           <input id="first_name" name="first_name" className="input" defaultValue={employee?.first_name} required />
@@ -17,9 +20,16 @@ export function EmployeeFields({ employee }: { employee?: EmployeeRow }) {
           <input id="last_name" name="last_name" className="input" defaultValue={employee?.last_name} required />
         </div>
         <div className="field">
-          <label htmlFor="payroll_id">Matricule paie</label>
-          <input id="payroll_id" name="payroll_id" className="input mono" defaultValue={employee?.payroll_id ?? ''} />
-          <span className="hint">Le même que dans votre logiciel de paie : il sert aux fichiers de paie.</span>
+          <label htmlFor="birth_date">Date de naissance</label>
+          <input id="birth_date" name="birth_date" type="date" className="input" defaultValue={employee?.birth_date ?? ''} />
+        </div>
+        <div className="field">
+          <label htmlFor="birth_place">Lieu de naissance</label>
+          <input id="birth_place" name="birth_place" className="input" defaultValue={employee?.birth_place ?? ''} />
+        </div>
+        <div className="field">
+          <label htmlFor="nationality">Nationalité</label>
+          <input id="nationality" name="nationality" className="input" defaultValue={employee?.nationality ?? ''} />
         </div>
         <div className="field">
           <label htmlFor="phone">Téléphone</label>
@@ -28,6 +38,37 @@ export function EmployeeFields({ employee }: { employee?: EmployeeRow }) {
         <div className="field">
           <label htmlFor="email">E-mail</label>
           <input id="email" name="email" type="email" className="input" defaultValue={employee?.email ?? ''} />
+        </div>
+        <div className="field">
+          <label htmlFor="address">Adresse</label>
+          <input id="address" name="address" className="input" defaultValue={employee?.address ?? ''} />
+        </div>
+        <div className="field">
+          <label htmlFor="postal_code">Code postal</label>
+          <input id="postal_code" name="postal_code" className="input" defaultValue={employee?.postal_code ?? ''} />
+        </div>
+        <div className="field">
+          <label htmlFor="city">Ville</label>
+          <input id="city" name="city" className="input" defaultValue={employee?.city ?? ''} />
+        </div>
+        <div className="field">
+          <label htmlFor="emergency_name">Personne à prévenir</label>
+          <input id="emergency_name" name="emergency_name" className="input" defaultValue={employee?.emergency_name ?? ''} />
+        </div>
+        <div className="field">
+          <label htmlFor="emergency_phone">Téléphone d’urgence</label>
+          <input id="emergency_phone" name="emergency_phone" type="tel" className="input" defaultValue={employee?.emergency_phone ?? ''} />
+        </div>
+      </fieldset>
+
+      <fieldset className="form-grid" style={{ border: '1px solid var(--grey-200)', borderRadius: 8, padding: 14 }}>
+        <legend className="small" style={{ fontWeight: 800, padding: '0 6px' }}>
+          Poste et contrat
+        </legend>
+        <div className="field">
+          <label htmlFor="payroll_id">Matricule paie</label>
+          <input id="payroll_id" name="payroll_id" className="input mono" defaultValue={employee?.payroll_id ?? ''} />
+          <span className="hint">Le même que dans votre logiciel de paie : il sert aux fichiers de paie.</span>
         </div>
         <div className="field">
           <label htmlFor="position">Poste</label>
@@ -62,14 +103,14 @@ export function EmployeeFields({ employee }: { employee?: EmployeeRow }) {
           <span className="hint">« Sorti » coupe immédiatement l’accès à l’application.</span>
         </div>
         <div className="field">
-          <label htmlFor="hired_on">Date d’embauche</label>
+          <label htmlFor="hired_on">Date d’arrivée (embauche)</label>
           <input id="hired_on" name="hired_on" type="date" className="input" defaultValue={employee?.hired_on ?? ''} />
         </div>
         <div className="field">
           <label htmlFor="left_on">Date de sortie</label>
           <input id="left_on" name="left_on" type="date" className="input" defaultValue={employee?.left_on ?? ''} />
         </div>
-      </div>
+      </fieldset>
 
       <fieldset className="form-grid" style={{ border: '1px solid var(--grey-200)', borderRadius: 8, padding: 14 }}>
         <legend className="small" style={{ fontWeight: 800, padding: '0 6px' }}>
@@ -78,6 +119,10 @@ export function EmployeeFields({ employee }: { employee?: EmployeeRow }) {
         <div className="field">
           <label htmlFor="licence_number">Numéro</label>
           <input id="licence_number" name="licence_number" className="input mono" defaultValue={employee?.licence_number ?? ''} />
+        </div>
+        <div className="field">
+          <label htmlFor="licence_issued_on">Date d’obtention</label>
+          <input id="licence_issued_on" name="licence_issued_on" type="date" className="input" defaultValue={employee?.licence_issued_on ?? ''} />
         </div>
         <div className="field">
           <label htmlFor="licence_expires_on">Date de fin de validité</label>
@@ -93,6 +138,9 @@ export function EmployeeFields({ employee }: { employee?: EmployeeRow }) {
             ))}
           </div>
         </div>
+        <span className="hint" style={{ gridColumn: '1 / -1' }}>
+          Arrêts maladie, accidents du travail, formations, congés et autres situations se déclarent sur la fiche du salarié : ils rendent le salarié indisponible au planning.
+        </span>
       </fieldset>
 
       <div className="field">

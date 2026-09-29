@@ -2,6 +2,7 @@
 
 import { startTransition, useActionState, useState } from 'react';
 import { PhotoInput } from '@/components/PhotoInput';
+import { ZonePicker } from '@/components/ZonePicker';
 import { DAMAGE_TYPES } from '@/lib/domain/labels';
 import type { FormState } from '@/lib/forms';
 import styles from './inspection.module.css';
@@ -83,12 +84,18 @@ export function ReportForm({
       </fieldset>
 
       <fieldset className={styles.block}>
-        <legend>3. Photos</legend>
+        <legend>3. Où sur le véhicule ?</legend>
+        <p className={styles.help}>Touchez les zones concernées (facultatif pour une panne mécanique).</p>
+        <ZonePicker />
+      </fieldset>
+
+      <fieldset className={styles.block}>
+        <legend>4. Photos</legend>
         <PhotoInput name="photos" label="Prendre des photos" multiple />
       </fieldset>
 
       <fieldset className={styles.block}>
-        <legend>4. Que s’est-il passé ?</legend>
+        <legend>5. Que s’est-il passé ?</legend>
         <textarea name="description" className="input" rows={3} required aria-label="Description" placeholder="Ex. rétroviseur droit cassé en passant entre deux camions" />
         {type === 'accident' && (
           <label className="checkbox">

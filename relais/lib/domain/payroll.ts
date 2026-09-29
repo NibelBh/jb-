@@ -11,11 +11,14 @@ export type PayrollUnit = 'jours' | 'nombre' | 'euros' | 'heures' | 'valeur';
 export const PAYROLL_VARIABLES = [
   { key: 'jours_travailles', label: 'Jours travaillés', unit: 'jours', defaultCode: 'JTRAV', source: 'auto' },
   { key: 'tournees', label: 'Tournées effectuées', unit: 'nombre', defaultCode: 'TOURN', source: 'auto' },
+  { key: 'heures_travaillees', label: 'Heures travaillées', unit: 'heures', defaultCode: 'HTRAV', source: 'auto' },
   { key: 'conge', label: 'Congés', unit: 'jours', defaultCode: 'ABSCP', source: 'absence' },
   { key: 'maladie', label: 'Arrêt maladie', unit: 'jours', defaultCode: 'ABSMAL', source: 'absence' },
+  { key: 'accident_travail', label: 'Accident du travail', unit: 'jours', defaultCode: 'ABSAT', source: 'absence' },
   { key: 'absence_injustifiee', label: 'Absence non justifiée', unit: 'jours', defaultCode: 'ABSNJ', source: 'absence' },
   { key: 'absence_autorisee', label: 'Absence autorisée', unit: 'jours', defaultCode: 'ABSAUT', source: 'absence' },
   { key: 'formation', label: 'Formation', unit: 'jours', defaultCode: 'FORM', source: 'absence' },
+  { key: 'situation_autre', label: 'Autre situation', unit: 'jours', defaultCode: 'ABSAUT2', source: 'absence' },
   { key: 'retard', label: 'Retards', unit: 'nombre', defaultCode: 'RETARD', source: 'absence' },
   { key: 'prime', label: 'Prime', unit: 'euros', defaultCode: 'PRIME', source: 'manuel' },
   { key: 'acompte', label: 'Acompte', unit: 'euros', defaultCode: 'ACOMPTE', source: 'manuel' },
@@ -76,17 +79,15 @@ function daysOf(start: string, end: string): string[] {
 
 // ---------- Calcul par salarié ----------
 
+/** Un créneau du planning, vu par la paie. `minutes` = durée réellement travaillée si le créneau est réalisé. */
+export type PayrollShift = { day: string; route_name: string | null; status: string; minutes: number };
+
 export type PayrollInput = {
   employeeId: number;
   payrollId: string | null;
   lastName: string;
   firstName: string;
-  /** Jours planifiés « travail » (planning). */
-  plannedDays: string[];
-  /** Jours avec une tournée au planning. */
-  routeDays: string[];
-  /** Jours où le salarié a pris un véhicule (preuve de travail effectif). */
-  vehicleDays: string[];
+  shifts: PayrollShift[];
   absences: { type: string; start_on: string; end_on: string; note: string | null }[];
   items: { variable: string; value: number; note: string | null }[];
   km: number;
@@ -99,8 +100,14 @@ export type PayrollLine = {
   payrollId: string | null;
   lastName: string;
   firstName: string;
+  /** Jours distincts où le salarié a été présent (au moins un créneau réalisé). */
   workedDays: number;
+  /** Tournées réalisées : un créneau réalisé avec une tournée compte pour une tournée. */
   routes: number;
+  /** Heures réellement travaillées (heures réelles, sinon heures prévues confirmées par un responsable). */
+  hours: number;
+  /** Jours passés où un créneau reste prévu ou en cours : présence à confirmer, non comptée. */
+  unconfirmedDays: string[];
   absenceDays: Record<string, number>;
   lateCount: number;
   absencePeriods: AbsencePeriod[];
@@ -111,18 +118,18 @@ export type PayrollLine = {
 
 /**
  * Règles :
- * - un jour est travaillé s'il y a eu prise de véhicule, ou s'il était planifié « travail »
- *   sans absence ce jour-là (jours passés uniquement : `until` = aujourd'hui) ;
- * - une tournée est comptée par jour de tournée au planning ou, à défaut, par jour de prise de véhicule ;
+ * - journée travaillée = jour où le salarié a au moins un créneau réalisé (présence réelle :
+ *   état de fin de journée fait, ou présence confirmée par un responsable) ;
+ * - tournée = créneau réalisé rattaché à une tournée ; deux tournées le même jour font 1 jour et 2 tournées ;
+ * - un jour sans tournée (formation, dépôt) compte comme jour travaillé mais pas comme tournée ;
+ * - les créneaux non confirmés des jours passés ne comptent pas : ils sont listés à part ;
  * - les absences sont comptées en jours calendaires, bornées au mois, avec leurs dates ;
  * - chaque jour couvert par un « retard » compte pour un retard.
  */
 export function computePayrollLine(input: PayrollInput, period: string, until: string): PayrollLine {
   const { start, end } = periodBounds(period);
   const inMonth = (d: string) => d >= start && d <= end;
-  const lastPlannedDay = until < end ? until : end;
 
-  const absentDays = new Set<string>();
   const absenceDaysByType: Record<string, Set<string>> = {};
   const absencePeriods: AbsencePeriod[] = [];
   for (const a of input.absences) {
@@ -132,17 +139,14 @@ export function computePayrollLine(input: PayrollInput, period: string, until: s
     const days = daysOf(from, to);
     const set = (absenceDaysByType[a.type] ??= new Set());
     days.forEach((d) => set.add(d));
-    if (a.type !== 'retard') days.forEach((d) => absentDays.add(d));
     absencePeriods.push({ type: a.type, start: from, end: to, days: days.length });
   }
 
-  const worked = new Set(input.vehicleDays.filter(inMonth));
-  for (const d of input.plannedDays) {
-    if (inMonth(d) && d <= lastPlannedDay && !absentDays.has(d)) worked.add(d);
-  }
-  // Tournées : celles du planning (hors jours d'absence), ou à défaut les jours de prise de véhicule.
-  const routes = new Set(input.routeDays.filter((d) => inMonth(d) && d <= lastPlannedDay && !absentDays.has(d)));
-  input.vehicleDays.filter(inMonth).forEach((d) => routes.add(d));
+  const done = input.shifts.filter((s) => inMonth(s.day) && s.status === 'realise');
+  const workedDays = new Set(done.map((s) => s.day));
+  const routes = new Set(done.filter((s) => s.route_name).map((s) => `${s.day}|${s.route_name!.toLowerCase()}`));
+  const minutes = done.reduce((sum, s) => sum + s.minutes, 0);
+  const unconfirmed = new Set(input.shifts.filter((s) => inMonth(s.day) && s.day <= until && s.status !== 'realise').map((s) => s.day));
 
   const manual: Partial<Record<PayrollVariable, number>> = {};
   const manualNotes: string[] = [];
@@ -160,8 +164,10 @@ export function computePayrollLine(input: PayrollInput, period: string, until: s
     payrollId: input.payrollId,
     lastName: input.lastName,
     firstName: input.firstName,
-    workedDays: worked.size,
+    workedDays: workedDays.size,
     routes: routes.size,
+    hours: round2(minutes / 60),
+    unconfirmedDays: [...unconfirmed].sort(),
     absenceDays,
     lateCount: absenceDaysByType.retard?.size ?? 0,
     absencePeriods: absencePeriods.sort((a, b) => a.start.localeCompare(b.start)),
@@ -196,11 +202,13 @@ export function recapCsv(lines: PayrollLine[], period: string): string {
     'Période',
     'Jours travaillés',
     'Tournées',
+    'Heures travaillées',
     ...absenceLabels.map((v) => `${v.label} (jours)`),
     'Retards',
     ...MANUAL_VARIABLES.map((v) => `${v.label}${v.unit === 'euros' ? ' (€)' : v.unit === 'heures' ? ' (h)' : ''}`),
     'Km parcourus',
     'Détail des absences',
+    'Présences à confirmer',
     'Observations',
   ];
   const rows = lines.map((l) => [
@@ -210,11 +218,13 @@ export function recapCsv(lines: PayrollLine[], period: string): string {
     period,
     l.workedDays,
     l.routes,
+    frNumber(l.hours),
     ...absenceLabels.map((v) => l.absenceDays[v.key] ?? 0),
     l.lateCount,
     ...MANUAL_VARIABLES.map((v) => (l.manual[v.key] === undefined ? '' : v.unit === 'euros' ? frAmount(l.manual[v.key]!) : frNumber(l.manual[v.key]!))),
     l.km,
     l.absencePeriods.map((p) => `${labelFor(p.type)} du ${formatDate(p.start)} au ${formatDate(p.end)}`).join(' ; '),
+    l.unconfirmedDays.map(formatDate).join(' ; '),
     l.manualNotes.join(' ; '),
   ]);
   return toCsv(header, rows);
@@ -238,6 +248,7 @@ export function payrollImportCsv(lines: PayrollLine[], period: string, codes: Pa
   for (const l of lines) {
     if (l.workedDays > 0) push(l, 'jours_travailles', String(l.workedDays));
     if (l.routes > 0) push(l, 'tournees', String(l.routes));
+    if (l.hours > 0) push(l, 'heures_travaillees', frNumber(l.hours));
     for (const p of l.absencePeriods) {
       if (p.type === 'retard' || !isPayrollVariable(p.type)) continue;
       push(l, p.type, String(p.days), p.start, p.end);

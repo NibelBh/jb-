@@ -33,15 +33,18 @@ export function dashboard(db: Db, orgId: number, today: string) {
   const damages30 = get<{ n: number }>(db, `SELECT COUNT(*) AS n FROM damages WHERE org_id = ? AND created_at >= ?`, orgId, since);
   const onDuty = get<{ n: number }>(db, `SELECT COUNT(*) AS n FROM assignments WHERE org_id = ? AND ended_at IS NULL`, orgId);
 
-  const present = board.people.filter((p) => p.plan_status === 'travail' && (!p.absence_type || p.absence_type === 'retard')).length;
-  const absent = board.people.filter((p) => p.absence_type && p.absence_type !== 'retard').length;
-  const late = board.people.filter((p) => p.absence_type === 'retard').length;
-  const resting = board.people.filter((p) => p.plan_status === 'repos' && !p.absence_type).length;
+  const planned = board.people.filter((p) => p.shifts.length > 0).length;
+  const onShift = board.people.filter((p) => p.shifts.some((s) => s.status === 'en_cours')).length;
+  const done = board.people.filter((p) => p.shifts.length > 0 && p.shifts.every((s) => s.status === 'realise')).length;
+  const absent = board.people.filter((p) => p.absence_type).length;
+  const late = board.people.filter((p) => p.late).length;
+  const free = board.people.filter((p) => p.shifts.length === 0 && !p.unavailable).length;
+  const routes = board.shifts.filter((s) => s.route_name);
 
   return {
     board,
-    routes: { total: board.routes.length, covered: board.routes.filter((r) => r.issues.length === 0).length },
-    people: { present, absent, late, resting },
+    routes: { total: routes.length, covered: routes.filter((r) => !r.blocking).length },
+    people: { planned, onShift, done, absent, late, free },
     vehicles: {
       total: vehicleCounts.reduce((s, v) => s + v.n, 0),
       disponible: byStatus.disponible ?? 0,

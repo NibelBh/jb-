@@ -1,82 +1,125 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { requireAction } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { addAbsence, addRoute, assignRoute, deleteAbsence, deleteRoute, importRoutes, setDayStatus } from '@/lib/data/planning';
-import { parisDate } from '@/lib/domain/dates';
-import { ABSENCE_TYPES, DAY_STATUSES } from '@/lib/domain/labels';
-import { type FormState, csvInput, date, id, oneOf, optId, optText, text, toFormState } from '@/lib/forms';
+import { addAbsence, confirmPresence, createShifts, deleteAbsence, deleteShift, markAbsent, reassignShift, updateShift } from '@/lib/data/planning';
+import { addDays, parisDate } from '@/lib/domain/dates';
+import { ABSENCE_TYPES } from '@/lib/domain/labels';
+import { normalizeTime } from '@/lib/domain/shifts';
+import { FieldError, type FormState, date, id, oneOf, optDate, optId, optText, toFormState } from '@/lib/forms';
 
-function done(message?: string): FormState {
+function done(message?: string, details?: string[]): FormState {
   revalidatePath('/planning');
   revalidatePath('/aujourdhui');
-  return message ? { ok: message } : undefined;
+  revalidatePath('/paie');
+  revalidatePath('/personnel');
+  return message ? { ok: message, details } : undefined;
 }
 
-export async function assignRouteAction(_: FormState, formData: FormData): Promise<FormState> {
+function hour(formData: FormData, name: string, label: string): string {
+  const value = normalizeTime(String(formData.get(name) ?? ''));
+  if (!value) throw new FieldError(`Le champ « ${label} » doit être une heure valide (ex. 08:00).`);
+  return value;
+}
+
+function shiftFields(formData: FormData) {
+  return {
+    employeeId: optId(formData, 'employeeId'),
+    startTime: hour(formData, 'startTime', 'Début'),
+    endTime: hour(formData, 'endTime', 'Fin'),
+    routeName: optText(formData, 'routeName', 40)?.toUpperCase() ?? null,
+    vehicleId: optId(formData, 'vehicleId'),
+    notes: optText(formData, 'notes', 300),
+  };
+}
+
+/** Jours concernés : le jour choisi, ou chaque jour coché de la semaine jusqu'à la date de fin. */
+function daysOf(formData: FormData): string[] {
+  const first = date(formData, 'day', 'Jour');
+  const until = optDate(formData, 'repeatUntil', 'Répéter jusqu’au');
+  if (!until || until === first) return [first];
+  if (until < first) throw new FieldError('La date de fin de répétition doit être après le jour choisi.');
+  const weekdays = new Set(formData.getAll('weekdays').map(String));
+  const days: string[] = [];
+  for (let d = first; d <= until && days.length < 62; d = addDays(d, 1)) {
+    const weekday = String(new Date(`${d}T12:00:00Z`).getUTCDay());
+    if (weekdays.size === 0 || weekdays.has(weekday)) days.push(d);
+  }
+  return days;
+}
+
+export async function createShiftAction(_: FormState, formData: FormData): Promise<FormState> {
   try {
     const ctx = await requireAction('planning.modifier');
-    const error = assignRoute(getDb(), ctx, {
-      routeId: id(formData, 'routeId'),
-      employeeId: optId(formData, 'employeeId'),
-      vehicleId: optId(formData, 'vehicleId'),
-    });
-    return error ? { error } : done('Affectation enregistrée.');
+    const result = createShifts(getDb(), ctx, shiftFields(formData), daysOf(formData));
+    if (result.error) return { error: result.error, details: result.skipped };
+    return done(
+      result.created > 1 ? `${result.created} planifications créées.` : 'Planification créée.',
+      result.skipped.length ? [`Jours non planifiés :`, ...result.skipped] : undefined,
+    );
   } catch (error) {
     return toFormState(error);
   }
 }
 
-export async function addRouteAction(_: FormState, formData: FormData): Promise<FormState> {
+export async function updateShiftAction(_: FormState, formData: FormData): Promise<FormState> {
+  let day: string;
   try {
     const ctx = await requireAction('planning.modifier');
-    const startTime = optText(formData, 'startTime', 5);
-    const error = addRoute(getDb(), ctx, {
-      day: date(formData, 'day', 'Jour'),
-      code: text(formData, 'code', 'Code de tournée', 40),
-      client: optText(formData, 'client', 80),
-      depot: optText(formData, 'depot', 80),
-      startTime: startTime && /^\d{2}:\d{2}$/.test(startTime) ? startTime : null,
-    });
-    return error ? { error } : done('Tournée ajoutée.');
-  } catch (error) {
-    return toFormState(error);
-  }
-}
-
-export async function deleteRouteAction(_: FormState, formData: FormData): Promise<FormState> {
-  try {
-    const ctx = await requireAction('planning.modifier');
-    deleteRoute(getDb(), ctx, id(formData, 'routeId'));
-    return done();
-  } catch (error) {
-    return toFormState(error);
-  }
-}
-
-export async function importRoutesAction(_: FormState, formData: FormData): Promise<FormState> {
-  try {
-    const ctx = await requireAction('planning.modifier');
-    const day = date(formData, 'day', 'Jour');
-    const content = await csvInput(formData);
-    const report = importRoutes(getDb(), ctx, day, content);
-    if (report.created + report.updated === 0 && report.errors.length > 0) return { error: 'Aucune tournée importée.', details: report.errors };
+    day = date(formData, 'day', 'Jour');
+    const error = updateShift(getDb(), ctx, id(formData, 'shiftId'), { ...shiftFields(formData), day });
+    if (error) return { error };
     done();
-    return {
-      ok: `${report.created} tournée(s) créée(s), ${report.updated} mise(s) à jour, ${report.assigned} affectation(s).`,
-      details: report.errors,
-    };
+  } catch (error) {
+    return toFormState(error);
+  }
+  redirect(`/planning?jour=${day}`);
+}
+
+export async function deleteShiftAction(_: FormState, formData: FormData): Promise<FormState> {
+  try {
+    const ctx = await requireAction('planning.modifier');
+    const error = deleteShift(getDb(), ctx, id(formData, 'shiftId'));
+    return error ? { error } : done('Planification supprimée.');
   } catch (error) {
     return toFormState(error);
   }
 }
 
-export async function setDayStatusAction(_: FormState, formData: FormData): Promise<FormState> {
+export async function reassignShiftAction(_: FormState, formData: FormData): Promise<FormState> {
+  let day: string;
   try {
     const ctx = await requireAction('planning.modifier');
-    const error = setDayStatus(getDb(), ctx, date(formData, 'day', 'Jour'), id(formData, 'employeeId'), oneOf(formData, 'status', DAY_STATUSES, 'Statut'));
-    return error ? { error } : done();
+    day = date(formData, 'day', 'Jour');
+    const error = reassignShift(getDb(), ctx, id(formData, 'shiftId'), id(formData, 'employeeId'));
+    if (error) return { error };
+    done();
+  } catch (error) {
+    return toFormState(error);
+  }
+  redirect(`/planning?jour=${day}`);
+}
+
+export async function confirmPresenceAction(_: FormState, formData: FormData): Promise<FormState> {
+  try {
+    const ctx = await requireAction('presence.confirmer');
+    const error = confirmPresence(getDb(), ctx, id(formData, 'shiftId'), {
+      start: hour(formData, 'start', 'Arrivée'),
+      end: hour(formData, 'end', 'Départ'),
+    });
+    return error ? { error } : done('Présence confirmée.');
+  } catch (error) {
+    return toFormState(error);
+  }
+}
+
+export async function markAbsentAction(_: FormState, formData: FormData): Promise<FormState> {
+  try {
+    const ctx = await requireAction('absence.modifier');
+    const error = markAbsent(getDb(), ctx, id(formData, 'shiftId'), oneOf(formData, 'type', ABSENCE_TYPES, 'Motif'), optText(formData, 'note', 300));
+    return error ? { error } : done('Absence enregistrée : le créneau est à couvrir.');
   } catch (error) {
     return toFormState(error);
   }
@@ -87,7 +130,7 @@ export async function addAbsenceAction(_: FormState, formData: FormData): Promis
     const ctx = await requireAction('absence.modifier');
     const startOn = date(formData, 'startOn', 'Début');
     const endOn = String(formData.get('endOn') ?? '') ? date(formData, 'endOn', 'Fin') : startOn;
-    const error = addAbsence(
+    const result = addAbsence(
       getDb(),
       ctx,
       {
@@ -99,9 +142,8 @@ export async function addAbsenceAction(_: FormState, formData: FormData): Promis
       },
       parisDate(),
     );
-    if (error) return { error };
-    revalidatePath('/personnel');
-    return done('Absence enregistrée.');
+    if (result.error) return { error: result.error };
+    return done(result.freed ? `Absence enregistrée. ${result.freed} créneau(x) libéré(s), à couvrir dans le planning.` : 'Absence enregistrée.');
   } catch (error) {
     return toFormState(error);
   }
@@ -111,7 +153,6 @@ export async function deleteAbsenceAction(_: FormState, formData: FormData): Pro
   try {
     const ctx = await requireAction('absence.modifier');
     deleteAbsence(getDb(), ctx, id(formData, 'absenceId'));
-    revalidatePath('/personnel');
     return done();
   } catch (error) {
     return toFormState(error);

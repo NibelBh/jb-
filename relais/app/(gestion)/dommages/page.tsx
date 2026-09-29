@@ -9,6 +9,7 @@ import { listDamages } from '@/lib/data/cases';
 import { formatDateTime } from '@/lib/domain/dates';
 import { DAMAGE_TYPES, labelOf } from '@/lib/domain/labels';
 import { can } from '@/lib/domain/roles';
+import { zonesLabel } from '@/lib/domain/zones';
 
 export const metadata: Metadata = { title: 'Dommages' };
 
@@ -70,6 +71,7 @@ export default async function DamagesPage(props: PageProps<'/dommages'>) {
                     {labelOf(DAMAGE_TYPES, d.type)}
                   </Link>
                   {d.injured === 1 && <span className="badge badge-red" style={{ marginLeft: 6 }}>Blessé</span>}
+                  {d.zones && <div className="small muted">{zonesLabel(d.zones)}</div>}
                 </td>
                 <td>
                   <SeverityBadge severity={d.severity} />

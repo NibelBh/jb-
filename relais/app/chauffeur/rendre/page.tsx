@@ -26,8 +26,10 @@ export default async function ReturnVehiclePage() {
       <h1 style={{ color: 'var(--white)' }}>
         Retour de <span className={styles.plate}>{open.plate}</span>
       </h1>
-      <p className={styles.muted}>Un problème constaté ici crée automatiquement un dossier pour le responsable flotte.</p>
-      <InspectionForm action={returnVehicleAction} lastKm={vehicle?.current_km ?? 0} submitLabel="Rendre le véhicule" />
+      <p className={styles.muted}>
+        État du véhicule en fin de journée. Les photos sont rattachées au véhicule, à vous et à votre journée. Un nouveau dégât crée un dossier pour le responsable.
+      </p>
+      <InspectionForm action={returnVehicleAction} lastKm={vehicle?.current_km ?? 0} submitLabel="Valider l’état et rendre le véhicule" kind="retour" />
     </>
   );
 }

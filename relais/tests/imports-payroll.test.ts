@@ -49,16 +49,28 @@ describe('préparation de la paie', () => {
     expect(shiftPeriod('2026-12', 1)).toBe('2027-01');
   });
 
-  it('compte jours travaillés, tournées, absences datées, retards et éléments saisis', () => {
+  it('distingue journées travaillées, tournées et heures, sur la présence réelle uniquement', () => {
     const line = computePayrollLine(
       {
         employeeId: 1,
         payrollId: 'M001',
         lastName: 'Dupont',
         firstName: 'Jean',
-        plannedDays: ['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05', '2026-09-29'],
-        routeDays: ['2026-09-01', '2026-09-03', '2026-09-04'],
-        vehicleDays: ['2026-09-04', '2026-09-06'],
+        shifts: [
+          // Le 03 : deux tournées le même jour = 1 journée, 2 tournées.
+          { day: '2026-09-03', route_name: 'A01', status: 'realise', minutes: 240 },
+          { day: '2026-09-03', route_name: 'A07', status: 'realise', minutes: 270 },
+          // Le 05 : journée au dépôt sans tournée = 1 journée, 0 tournée.
+          { day: '2026-09-05', route_name: null, status: 'realise', minutes: 420 },
+          // Le 06 : une tournée.
+          { day: '2026-09-06', route_name: 'A02', status: 'realise', minutes: 510 },
+          // Le 08 : planifié mais présence jamais confirmée : non compté, signalé.
+          { day: '2026-09-08', route_name: 'A03', status: 'prevu', minutes: 0 },
+          // Le 29 : dans le futur, ni compté ni signalé.
+          { day: '2026-09-29', route_name: 'A03', status: 'prevu', minutes: 0 },
+          // Hors du mois.
+          { day: '2026-08-31', route_name: 'A01', status: 'realise', minutes: 500 },
+        ],
         absences: [
           { type: 'conge', start_on: '2026-08-28', end_on: '2026-09-02', note: null },
           { type: 'maladie', start_on: '2026-09-04', end_on: '2026-09-04', note: null },
@@ -73,10 +85,11 @@ describe('préparation de la paie', () => {
       '2026-09',
       '2026-09-20',
     );
-    // Travaillés : 03 et 05 (planifiés, sans absence), 04 et 06 (véhicule pris) ; 01-02 en congé ; 29 dans le futur.
-    expect(line.workedDays).toBe(4);
-    // Tournées : 03 au planning (01 en congé, 04 en arrêt), plus 04 et 06 où un véhicule a été pris.
+    // Journées : 03, 05 et 06. Tournées : A01 et A07 le 03, A02 le 06. Heures : 240 + 270 + 420 + 510 minutes.
+    expect(line.workedDays).toBe(3);
     expect(line.routes).toBe(3);
+    expect(line.hours).toBe(24);
+    expect(line.unconfirmedDays).toEqual(['2026-09-08']);
     expect(line.absenceDays).toEqual({ conge: 2, maladie: 1 });
     expect(line.lateCount).toBe(1);
     expect(line.absencePeriods[0]).toEqual({ type: 'conge', start: '2026-09-01', end: '2026-09-02', days: 2 });
@@ -87,12 +100,15 @@ describe('préparation de la paie', () => {
     expect(parsed[0]).toEqual(['Matricule', 'Nom', 'Prénom', 'Code rubrique', 'Libellé', 'Valeur', 'Date début', 'Date fin']);
     expect(parsed).toContainEqual(['M001', 'Dupont', 'Jean', 'CP01', 'Congés', '2', '01/09/2026', '02/09/2026']);
     expect(parsed).toContainEqual(['M001', 'Dupont', 'Jean', 'PRIME', 'Prime', '150,00', '01/09/2026', '30/09/2026']);
-    expect(parsed).toContainEqual(['M001', 'Dupont', 'Jean', 'JTRAV', 'Jours travaillés', '4', '01/09/2026', '30/09/2026']);
+    expect(parsed).toContainEqual(['M001', 'Dupont', 'Jean', 'JTRAV', 'Jours travaillés', '3', '01/09/2026', '30/09/2026']);
+    expect(parsed).toContainEqual(['M001', 'Dupont', 'Jean', 'TOURN', 'Tournées effectuées', '3', '01/09/2026', '30/09/2026']);
+    expect(parsed).toContainEqual(['M001', 'Dupont', 'Jean', 'HTRAV', 'Heures travaillées', '24', '01/09/2026', '30/09/2026']);
     expect(rows).toBe(parsed.length - 1);
 
     const recap = parseCsv(recapCsv([line], '2026-09'));
-    expect(recap[1].slice(0, 6)).toEqual(['M001', 'Dupont', 'Jean', '2026-09', '4', '3']);
-    expect(recap[1].at(-2)).toContain('Congés du 01/09/2026 au 02/09/2026');
+    expect(recap[1].slice(0, 7)).toEqual(['M001', 'Dupont', 'Jean', '2026-09', '3', '3', '24']);
+    expect(recap[1].at(-3)).toContain('Congés du 01/09/2026 au 02/09/2026');
+    expect(recap[1].at(-2)).toBe('08/09/2026');
   });
 });
 
@@ -184,7 +200,18 @@ describe('imports CSV et paie sur la base de démonstration', () => {
     expect(month.missingPayrollId).toHaveLength(0);
     expect(month.lines.find((l) => l.employeeId === karim.id)?.absenceDays.maladie).toBeGreaterThanOrEqual(1);
     expect(month.lines.find((l) => l.employeeId === samir.id)).toMatchObject({ manual: { prime: 80 } });
-    expect(month.lines.find((l) => l.employeeId === samir.id)!.workedDays).toBeGreaterThanOrEqual(1);
+    // Les compteurs viennent des créneaux réalisés, pas du planning : on les recompte directement en base.
+    const { start, end } = periodBounds(period);
+    for (const l of month.lines) {
+      const real = get<{ days: number; routes: number }>(
+        db,
+        `SELECT COUNT(DISTINCT day) AS days, COUNT(route_name) AS routes FROM shifts WHERE employee_id = ? AND status = 'realise' AND day BETWEEN ? AND ?`,
+        l.employeeId,
+        start,
+        end,
+      )!;
+      expect([l.workedDays, l.routes]).toEqual([real.days, real.routes]);
+    }
 
     savePayrollCodes(db, ctx, { maladie: 'AM01' });
     expect(payrollCodes(db, org).maladie).toBe('AM01');

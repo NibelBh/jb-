@@ -5,7 +5,7 @@ import { payrollMonth } from '@/lib/data/payroll';
 import { toCsv } from '@/lib/domain/csv';
 import { parisDate } from '@/lib/domain/dates';
 import { isPeriod } from '@/lib/domain/payroll';
-import { can, canAccess } from '@/lib/domain/roles';
+import { can } from '@/lib/domain/roles';
 
 function csvResponse(csv: string, name: string) {
   return new Response(csv, {
@@ -27,11 +27,6 @@ export async function GET(request: Request, ctx: RouteContext<'/api/modeles/[typ
     if (!can(session.roles, IMPORT_KINDS[type].action)) return new Response('Accès refusé', { status: 403 });
     const t = importTemplate(type);
     return csvResponse(toCsv(t.header, [t.example]), `modele-${type}.csv`);
-  }
-
-  if (type === 'tournees') {
-    if (!canAccess(session.roles, 'planning')) return new Response('Accès refusé', { status: 403 });
-    return csvResponse(toCsv(['tournee', 'heure', 'client', 'agence', 'chauffeur', 'vehicule'], [['A01', '07:00', 'Amazon', 'Agence Nord', 'Samir Benali', 'FG-481-KL']]), 'modele-tournees.csv');
   }
 
   if (type === 'journal-paie') {

@@ -47,13 +47,18 @@ export const POSITIONS = [
 
 export const DRIVING_POSITIONS = ['chauffeur', 'chef_equipe'];
 
-/** Aucun motif médical : un arrêt maladie est une absence, pas un diagnostic. */
+/**
+ * Situations qui rendent un salarié indisponible (sauf le retard, qui ne bloque pas la journée).
+ * Aucun motif médical : un arrêt maladie est une absence, pas un diagnostic.
+ */
 export const ABSENCE_TYPES = [
   { value: 'conge', label: 'Congé' },
   { value: 'maladie', label: 'Arrêt maladie' },
-  { value: 'absence_injustifiee', label: 'Absence non justifiée' },
-  { value: 'absence_autorisee', label: 'Absence autorisée' },
+  { value: 'accident_travail', label: 'Accident du travail' },
   { value: 'formation', label: 'Formation' },
+  { value: 'absence_autorisee', label: 'Absence autorisée' },
+  { value: 'absence_injustifiee', label: 'Absence non justifiée' },
+  { value: 'situation_autre', label: 'Autre situation' },
   { value: 'retard', label: 'Retard' },
 ] as const;
 

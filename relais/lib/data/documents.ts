@@ -1,6 +1,7 @@
 import 'server-only';
 import { type Db, all } from '../db';
-import { type DocumentEntity, type ExpiryStatus, documentTypeLabel, expiryStatus, technicalInspectionDue } from '../domain/documents';
+import { type DocumentEntity, type ExpiryStatus, documentTypeLabel, expiryStatus } from '../domain/documents';
+import { type VehicleAdmin, ctDueDate } from '../domain/vehicles';
 
 export type DocumentRow = {
   id: number;
@@ -61,7 +62,7 @@ export function listDeadlines(db: Db, orgId: number, today: string): Deadline[] 
   for (const d of docs) {
     if (!d.entity_label) continue; // véhicule sorti ou salarié parti
     if (d.entity_type === 'employee' && d.type === 'permis') continue; // le permis est suivi via la fiche salarié
-    if (d.entity_type === 'vehicle' && d.type === 'controle_technique') continue; // recalculé ci-dessous
+    if (d.entity_type === 'vehicle' && (d.type === 'controle_technique' || d.type === 'assurance')) continue; // suivis sur la fiche véhicule, ci-dessous
     deadlines.push({
       key: `doc-${d.id}`,
       entity: d.entity_type,
@@ -95,15 +96,24 @@ export function listDeadlines(db: Db, orgId: number, today: string): Deadline[] 
     });
   }
 
-  const vehicles = all<{ id: number; plate: string; first_registration_on: string | null; last_ct: string | null }>(
+  const vehicles = all<VehicleAdmin & { id: number; plate: string }>(
     db,
-    `SELECT v.id, v.plate, v.first_registration_on,
-            (SELECT MAX(issued_on) FROM documents d WHERE d.org_id = v.org_id AND d.entity_type = 'vehicle' AND d.entity_id = v.id AND d.type = 'controle_technique') AS last_ct
-       FROM vehicles v WHERE v.org_id = ? AND v.status != 'sorti'`,
+    `SELECT id, plate, first_registration_on, insurance_end_on, ct_last_on, ct_expires_on FROM vehicles WHERE org_id = ? AND status != 'sorti'`,
     orgId,
   );
   for (const v of vehicles) {
-    const due = technicalInspectionDue(v.first_registration_on, v.last_ct);
+    deadlines.push({
+      key: `assurance-${v.id}`,
+      entity: 'vehicle',
+      entityId: v.id,
+      entityLabel: v.plate,
+      label: 'Assurance',
+      expiresOn: v.insurance_end_on ?? '',
+      status: expiryStatus(v.insurance_end_on, today),
+      href: hrefFor('vehicle', v.id),
+      computed: false,
+    });
+    const due = ctDueDate(v);
     if (!due) continue;
     deadlines.push({
       key: `ct-${v.id}`,
@@ -114,7 +124,7 @@ export function listDeadlines(db: Db, orgId: number, today: string): Deadline[] 
       expiresOn: due,
       status: expiryStatus(due, today),
       href: hrefFor('vehicle', v.id),
-      computed: true,
+      computed: !v.ct_expires_on,
     });
   }
 

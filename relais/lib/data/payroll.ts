@@ -15,6 +15,7 @@ import {
   periodLabel,
   variableInfo,
 } from '../domain/payroll';
+import { type ShiftTimes, workedMinutes } from '../domain/shifts';
 import { logAudit } from './audit';
 import { fullName, getEmployee } from './employees';
 import { employeeIndex, findEmployee } from './imports';
@@ -153,9 +154,10 @@ function employeesOf(db: Db, orgId: number, start: string, end: string) {
 export function payrollMonth(db: Db, orgId: number, period: string, today = parisDate()): PayrollMonth {
   const { start, end } = periodBounds(period);
   const employees = employeesOf(db, orgId, start, end);
-  const plans = all<{ employee_id: number; day: string; status: string; route_id: number | null }>(
+  const shifts = all<ShiftTimes & { employee_id: number; route_name: string | null; status: string }>(
     db,
-    `SELECT employee_id, day, status, route_id FROM plans WHERE org_id = ? AND day BETWEEN ? AND ?`,
+    `SELECT employee_id, day, start_time, end_time, actual_start, actual_end, route_name, status FROM shifts
+      WHERE org_id = ? AND day BETWEEN ? AND ? AND employee_id IS NOT NULL`,
     orgId,
     start,
     end,
@@ -198,9 +200,9 @@ export function payrollMonth(db: Db, orgId: number, period: string, today = pari
         payrollId: e.payroll_id,
         lastName: e.last_name,
         firstName: e.first_name,
-        plannedDays: plans.filter((p) => p.employee_id === e.id && p.status === 'travail').map((p) => p.day),
-        routeDays: plans.filter((p) => p.employee_id === e.id && p.route_id !== null).map((p) => p.day),
-        vehicleDays: mine.map((a) => a.day),
+        shifts: shifts
+          .filter((s) => s.employee_id === e.id)
+          .map((s) => ({ day: s.day, route_name: s.route_name, status: s.status, minutes: s.status === 'realise' ? workedMinutes(s) : 0 })),
         absences: absences.filter((a) => a.employee_id === e.id),
         items: items.filter((i) => i.employee_id === e.id),
         km: mine.reduce((sum, a) => sum + (a.start_km !== null && a.end_km !== null ? a.end_km - a.start_km : 0), 0),

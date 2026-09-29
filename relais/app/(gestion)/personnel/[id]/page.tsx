@@ -11,9 +11,11 @@ import { getDb } from '@/lib/db';
 import { listAudit } from '@/lib/data/audit';
 import { listDamages, listFines } from '@/lib/data/cases';
 import { listDocuments } from '@/lib/data/documents';
-import { fullName, getEmployee, listAbsences, userForEmployee } from '@/lib/data/employees';
+import { currentSituation, fullName, getEmployee, listAbsences, userForEmployee } from '@/lib/data/employees';
+import { listShifts } from '@/lib/data/planning';
 import { assignmentHistory } from '@/lib/data/vehicles';
-import { addDays, formatDate, formatDateTime, parisDate } from '@/lib/domain/dates';
+import { addDays, daysBetween, formatDate, formatDateTime, formatWeekday, parisDate } from '@/lib/domain/dates';
+import { formatDuration, formatRange, workedMinutes } from '@/lib/domain/shifts';
 import { expiryStatus } from '@/lib/domain/documents';
 import { ABSENCE_TYPES, CONTRACT_TYPES, DAMAGE_TYPES, DRIVING_POSITIONS, EMPLOYEE_STATUSES, FINE_STATUSES, POSITIONS, labelOf } from '@/lib/domain/labels';
 import { can, canAccess } from '@/lib/domain/roles';
@@ -34,7 +36,18 @@ export default async function EmployeePage(props: PageProps<'/personnel/[id]'>) 
   const isDriver = DRIVING_POSITIONS.includes(employee.position);
   const licence = expiryStatus(employee.licence_expires_on, today);
   const access = userForEmployee(db, ctx.orgId, employee.id);
-  const absences = listAbsences(db, ctx.orgId, { from: addDays(today, -60), to: addDays(today, 120), employeeId: employee.id });
+  const absences = listAbsences(db, ctx.orgId, { from: addDays(today, -365), to: addDays(today, 365), employeeId: employee.id }).reverse();
+  const situation = currentSituation(db, ctx.orgId, employee, today);
+  const upcoming = listShifts(db, ctx.orgId, { from: today, to: addDays(today, 13), employeeId: employee.id });
+  const month = today.slice(0, 7);
+  const monthShifts = listShifts(db, ctx.orgId, { from: `${month}-01`, to: today, employeeId: employee.id });
+  const done = monthShifts.filter((s) => s.status === 'realise');
+  const monthStats = {
+    days: new Set(done.map((s) => s.day)).size,
+    routes: done.filter((s) => s.route_name).length,
+    minutes: done.reduce((sum, s) => sum + workedMinutes(s), 0),
+    pending: new Set(monthShifts.filter((s) => s.status !== 'realise' && s.day < today).map((s) => s.day)).size,
+  };
   const history = assignmentHistory(db, ctx.orgId, { employeeId: employee.id, limit: 15 });
   const damages = canAccess(ctx.roles, 'dommages') ? listDamages(db, ctx.orgId, { employeeId: employee.id }) : [];
   const fines = canAccess(ctx.roles, 'amendes') ? listFines(db, ctx.orgId, { employeeId: employee.id }) : [];
@@ -64,22 +77,59 @@ export default async function EmployeePage(props: PageProps<'/personnel/[id]'>) 
         }
       />
 
+      <p className={`alert ${situation.tone === 'ok' ? 'alert-ok' : situation.tone === 'off' ? 'alert-error' : ''}`} style={{ marginBottom: 16 }}>
+        Aujourd’hui : <strong>{situation.label}</strong>
+        {situation.until ? ` (jusqu’au ${formatDate(situation.until)} inclus)` : ''}.{' '}
+        {situation.tone !== 'ok' && 'Le salarié ne peut pas être planifié sur cette période.'}
+      </p>
+
       <div className="grid-2" style={{ marginBottom: 16 }}>
         <section className="card">
           <div className="card-head">
-            <h2 className="section-title">Fiche</h2>
+            <h2 className="section-title">Informations personnelles</h2>
           </div>
           <div className="card-body">
             <dl className="kv">
-              <dt>Matricule paie</dt>
-              <dd className="mono">{employee.payroll_id || 'Non renseigné'}</dd>
+              <dt>Date de naissance</dt>
+              <dd>
+                {formatDate(employee.birth_date) || '·'}
+                {employee.birth_place ? ` à ${employee.birth_place}` : ''}
+              </dd>
+              <dt>Nationalité</dt>
+              <dd>{employee.nationality || '·'}</dd>
+              <dt>Adresse</dt>
+              <dd>{[employee.address, [employee.postal_code, employee.city].filter(Boolean).join(' ')].filter(Boolean).join(', ') || '·'}</dd>
               <dt>Téléphone</dt>
               <dd>{employee.phone ? <a href={`tel:${employee.phone.replace(/\s/g, '')}`}>{employee.phone}</a> : '·'}</dd>
               <dt>E-mail</dt>
               <dd>{employee.email || '·'}</dd>
+              <dt>En cas d’urgence</dt>
+              <dd>
+                {employee.emergency_name || '·'}
+                {employee.emergency_phone ? (
+                  <>
+                    {' '}
+                    <a href={`tel:${employee.emergency_phone.replace(/\s/g, '')}`}>{employee.emergency_phone}</a>
+                  </>
+                ) : null}
+              </dd>
+            </dl>
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card-head">
+            <h2 className="section-title">Poste et contrat</h2>
+          </div>
+          <div className="card-body">
+            <dl className="kv">
+              <dt>Poste</dt>
+              <dd>{labelOf(POSITIONS, employee.position)}</dd>
+              <dt>Matricule paie</dt>
+              <dd className="mono">{employee.payroll_id || 'Non renseigné'}</dd>
               <dt>Contrat</dt>
               <dd>{labelOf(CONTRACT_TYPES, employee.contract_type) || '·'}</dd>
-              <dt>Embauche</dt>
+              <dt>Date d’arrivée</dt>
               <dd>{formatDate(employee.hired_on) || '·'}</dd>
               {employee.left_on && (
                 <>
@@ -128,6 +178,8 @@ export default async function EmployeePage(props: PageProps<'/personnel/[id]'>) 
               <dd className="mono">{employee.licence_number || '·'}</dd>
               <dt>Catégories</dt>
               <dd>{employee.licence_categories || '·'}</dd>
+              <dt>Date d’obtention</dt>
+              <dd>{formatDate(employee.licence_issued_on) || '·'}</dd>
               <dt>Fin de validité</dt>
               <dd>{formatDate(employee.licence_expires_on) || 'Non renseignée'}</dd>
               <dt>Dernière vérification</dt>
@@ -168,17 +220,17 @@ export default async function EmployeePage(props: PageProps<'/personnel/[id]'>) 
       <div className="grid-2" style={{ marginBottom: 16 }}>
         <section className="card">
           <div className="card-head">
-            <h2 className="section-title">Absences</h2>
-            <span className="small muted">60 derniers jours et à venir</span>
+            <h2 className="section-title">Situations et absences</h2>
+            <span className="small muted">Arrêt maladie, accident du travail, formation, congés… 12 derniers mois et à venir</span>
           </div>
           <div className="card-body stack">
             {absences.length === 0 && <p className="muted">Aucune absence.</p>}
             {absences.map((a) => (
               <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                 <div>
-                  <span className="badge">{labelOf(ABSENCE_TYPES, a.type)}</span>{' '}
+                  <span className={`badge ${a.start_on <= today && a.end_on >= today ? 'badge-red' : ''}`}>{labelOf(ABSENCE_TYPES, a.type)}</span>{' '}
                   <span className="small">
-                    du {formatDate(a.start_on)} au {formatDate(a.end_on)}
+                    du {formatDate(a.start_on)} au {formatDate(a.end_on)} ({daysBetween(a.start_on, a.end_on) + 1} j)
                     {a.note ? `. ${a.note}` : ''}
                   </span>
                 </div>
@@ -191,7 +243,7 @@ export default async function EmployeePage(props: PageProps<'/personnel/[id]'>) 
             ))}
             {can(ctx.roles, 'absence.modifier') && (
               <details className="disclosure">
-                <summary>Ajouter une absence</summary>
+                <summary>Déclarer une situation (arrêt, accident du travail, formation, congé…)</summary>
                 <ActionForm action={addAbsenceAction} submitLabel="Enregistrer" resetOnSuccess>
                   <input type="hidden" name="employeeId" value={employee.id} />
                   <div className="form-grid">
@@ -217,7 +269,7 @@ export default async function EmployeePage(props: PageProps<'/personnel/[id]'>) 
                   <div className="field">
                     <label htmlFor="a-note">Commentaire</label>
                     <input id="a-note" name="note" className="input" />
-                    <span className="hint">Aucun motif médical.</span>
+                    <span className="hint">Aucun motif médical. Les créneaux déjà planifiés sur la période sont libérés et signalés « À pourvoir ».</span>
                   </div>
                 </ActionForm>
               </details>
@@ -259,6 +311,46 @@ export default async function EmployeePage(props: PageProps<'/personnel/[id]'>) 
           )}
         </section>
       </div>
+
+      <section className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head">
+          <h2 className="section-title">Planning et présence</h2>
+          <Link href={`/planning?jour=${today}&vue=semaine`} className="small">
+            Planning de la semaine
+          </Link>
+        </div>
+        <div className="card-body grid-2">
+          <div>
+            <h3 style={{ marginBottom: 8 }}>Ce mois-ci (présence réelle)</h3>
+            <dl className="kv">
+              <dt>Journées travaillées</dt>
+              <dd>{monthStats.days}</dd>
+              <dt>Tournées réalisées</dt>
+              <dd>{monthStats.routes}</dd>
+              <dt>Heures travaillées</dt>
+              <dd>{formatDuration(monthStats.minutes)}</dd>
+              <dt>Présences à confirmer</dt>
+              <dd>{monthStats.pending ? <span className="badge badge-yellow">{monthStats.pending} jour(s)</span> : 'Aucune'}</dd>
+            </dl>
+          </div>
+          <div>
+            <h3 style={{ marginBottom: 8 }}>14 prochains jours</h3>
+            {upcoming.length === 0 ? (
+              <p className="muted small">Aucune planification.</p>
+            ) : (
+              <ul className="stack-sm" style={{ margin: 0, paddingLeft: 16 }}>
+                {upcoming.map((s) => (
+                  <li key={s.id} className="small">
+                    <Link href={`/planning?jour=${s.day}`}>{formatWeekday(s.day)}</Link> {formatRange(s.start_time, s.end_time)}
+                    {s.route_name ? `, tournée ${s.route_name}` : ''}
+                    {s.plate ? `, ${s.plate}` : ''}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </section>
 
       {(damages.length > 0 || fines.length > 0) && (
         <section className="card" style={{ marginBottom: 16 }}>

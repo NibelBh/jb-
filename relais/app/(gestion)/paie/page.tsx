@@ -38,6 +38,8 @@ export default async function PayrollPage(props: PageProps<'/paie'>) {
   const totals = {
     worked: month.lines.reduce((s, l) => s + l.workedDays, 0),
     routes: month.lines.reduce((s, l) => s + l.routes, 0),
+    hours: month.lines.reduce((s, l) => s + l.hours, 0),
+    unconfirmed: month.lines.reduce((s, l) => s + l.unconfirmedDays.length, 0),
     absences: month.lines.reduce((s, l) => s + Object.values(l.absenceDays).reduce((a, b) => a + b, 0), 0),
   };
   const costs = sumCosts(
@@ -49,7 +51,7 @@ export default async function PayrollPage(props: PageProps<'/paie'>) {
     <>
       <PageHeader
         title={`Paie · ${periodLabel(period)}`}
-        subtitle="Relais ne calcule pas les salaires. Il prépare les éléments variables du mois (jours travaillés, absences datées, retards, primes) dans un fichier que votre logiciel de paie ou votre cabinet importe, puis récupère le journal de paie pour suivre le coût salarial par tournée."
+        subtitle="Relais ne calcule pas les salaires. Il prépare les éléments variables du mois (jours travaillés, tournées, heures, absences datées, retards, primes) dans un fichier que votre logiciel de paie ou votre cabinet importe, puis récupère le journal de paie pour suivre le coût salarial par tournée."
         actions={
           <div className="btn-row">
             <Link className="btn btn-ghost btn-sm" href={`/paie?mois=${shiftPeriod(period, -1)}`}>
@@ -69,7 +71,17 @@ export default async function PayrollPage(props: PageProps<'/paie'>) {
 
       {month.partial && (
         <p className="alert" style={{ marginBottom: 12 }}>
-          Mois en cours : les jours travaillés et les tournées sont comptés jusqu’à aujourd’hui ; les absences déjà saisies pour la fin du mois sont incluses.
+          Mois en cours : seuls les créneaux déjà réalisés sont comptés ; les absences déjà saisies pour la fin du mois sont incluses.
+        </p>
+      )}
+      <p className="small muted" style={{ marginBottom: 12 }}>
+        Journée travaillée : jour où le salarié a été présent (état de fin de journée fait ou présence confirmée par un responsable). Tournée : créneau réalisé
+        rattaché à une tournée. Un salarié qui fait deux tournées le même jour compte 1 journée et 2 tournées ; une journée de formation au dépôt compte 1 journée et 0 tournée.
+      </p>
+      {totals.unconfirmed > 0 && (
+        <p className="alert alert-error" style={{ marginBottom: 12 }}>
+          {totals.unconfirmed} journée{totals.unconfirmed > 1 ? 's' : ''} planifiée{totals.unconfirmed > 1 ? 's' : ''} sans présence confirmée : elles ne sont pas comptées. Confirmez la présence (ou déclarez
+          l’absence) depuis le planning du jour concerné.
         </p>
       )}
       {month.missingPayrollId.length > 0 && (
@@ -97,6 +109,10 @@ export default async function PayrollPage(props: PageProps<'/paie'>) {
         <div className={styles.kpi}>
           <span className={styles.value}>{totals.routes}</span>
           <span className={styles.label}>Tournées</span>
+        </div>
+        <div className={styles.kpi}>
+          <span className={styles.value}>{frNumber(Math.round(totals.hours * 100) / 100)}</span>
+          <span className={styles.label}>Heures travaillées</span>
         </div>
         <div className={styles.kpi}>
           <span className={styles.value}>{totals.absences}</span>
@@ -157,6 +173,7 @@ export default async function PayrollPage(props: PageProps<'/paie'>) {
               <th>Salarié</th>
               <th className="num">Jours trav.</th>
               <th className="num">Tournées</th>
+              <th className="num">Heures</th>
               <th>Absences</th>
               <th className="num">Retards</th>
               <th>Éléments saisis</th>
@@ -178,7 +195,18 @@ export default async function PayrollPage(props: PageProps<'/paie'>) {
                   </td>
                   <td className="num">{l.workedDays}</td>
                   <td className="num">{l.routes}</td>
+                  <td className="num">{frNumber(l.hours)}</td>
                   <td>
+                    {l.unconfirmedDays.length > 0 && (
+                      <div className="small" style={{ marginBottom: 4 }}>
+                        <span className="badge badge-yellow">À confirmer</span>{' '}
+                        {l.unconfirmedDays.map((d) => (
+                          <Link key={d} href={`/planning?jour=${d}`} style={{ marginRight: 4 }}>
+                            {formatDate(d)}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
                     <div className="stack-sm" style={{ gap: 4 }}>
                       {l.absencePeriods
                         .filter((p) => p.type !== 'retard')

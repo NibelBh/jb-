@@ -25,6 +25,12 @@ function vehicleInput(formData: FormData): VehicleInput {
     initial_km: optInt(formData, 'initial_km', 'Kilométrage initial') ?? 0,
     owner: optText(formData, 'owner', 120),
     notes: optText(formData, 'notes', 2000),
+    insurer: optText(formData, 'insurer', 120),
+    insurance_policy: optText(formData, 'insurance_policy', 60),
+    insurance_start_on: optDate(formData, 'insurance_start_on', 'Début d’assurance'),
+    insurance_end_on: optDate(formData, 'insurance_end_on', 'Échéance d’assurance'),
+    ct_last_on: optDate(formData, 'ct_last_on', 'Dernier contrôle technique'),
+    ct_expires_on: optDate(formData, 'ct_expires_on', 'Échéance du contrôle technique'),
   };
 }
 

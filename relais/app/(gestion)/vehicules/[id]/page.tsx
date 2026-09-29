@@ -7,6 +7,7 @@ import { DamageStatusBadge, ExpiryBadge, VehicleStatusBadge } from '@/components
 import { DocumentsPanel } from '@/components/DocumentsPanel';
 import { InspectionSummary } from '@/components/InspectionSummary';
 import { PageHeader } from '@/components/PageHeader';
+import { VehicleSvg } from '@/components/VehicleMap';
 import { requireModule } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { listAudit } from '@/lib/data/audit';
@@ -14,12 +15,15 @@ import { listDamages } from '@/lib/data/cases';
 import { listDocuments } from '@/lib/data/documents';
 import { listEmployees } from '@/lib/data/employees';
 import { listInspections } from '@/lib/data/operations';
-import { assignmentHistory, getVehicle, lastTechnicalInspection, listImmobilizations } from '@/lib/data/vehicles';
-import { formatDate, formatDateTime, parisDate } from '@/lib/domain/dates';
-import { expiryStatus, technicalInspectionDue } from '@/lib/domain/documents';
+import { listShifts } from '@/lib/data/planning';
+import { assignmentHistory, getVehicle, listImmobilizations } from '@/lib/data/vehicles';
+import { addDays, formatDate, formatDateTime, formatWeekday, parisDate } from '@/lib/domain/dates';
 import { formatKm } from '@/lib/domain/inspection';
 import { DAMAGE_TYPES, DRIVING_POSITIONS, ENERGIES, VEHICLE_TYPES, labelOf } from '@/lib/domain/labels';
 import { can, canAccess } from '@/lib/domain/roles';
+import { formatRange } from '@/lib/domain/shifts';
+import { vehicleCompliance } from '@/lib/domain/vehicles';
+import { parseZones, zonesLabel } from '@/lib/domain/zones';
 import { correctOdometerAction, recordPastAssignmentAction, reviewInspectionAction, setVehicleStatusAction } from '../actions';
 
 export const metadata: Metadata = { title: 'Véhicule' };
@@ -37,7 +41,12 @@ export default async function VehiclePage(props: PageProps<'/vehicules/[id]'>) {
   const inspections = listInspections(db, ctx.orgId, { vehicleId: vehicle.id, limit: 8 });
   const pending = inspections.find((i) => i.status === 'en_attente');
   const damages = canAccess(ctx.roles, 'dommages') ? listDamages(db, ctx.orgId, { vehicleId: vehicle.id }) : [];
-  const ctDue = technicalInspectionDue(vehicle.first_registration_on, lastTechnicalInspection(db, ctx.orgId, vehicle.id));
+  const compliance = vehicleCompliance(vehicle, today);
+  const shifts = listShifts(db, ctx.orgId, { from: today, to: addDays(today, 13), vehicleId: vehicle.id });
+  const zoneCounts: Record<string, number> = {};
+  for (const d of damages) for (const z of parseZones(d.zones)) zoneCounts[z] = (zoneCounts[z] ?? 0) + 1;
+  const openZoneCounts: Record<string, number> = {};
+  for (const d of damages.filter((x) => x.status !== 'cloture')) for (const z of parseZones(d.zones)) openZoneCounts[z] = (openZoneCounts[z] ?? 0) + 1;
   const immobilizations = listImmobilizations(db, ctx.orgId, vehicle.id);
   const drivers = listEmployees(db, ctx.orgId).filter((e) => DRIVING_POSITIONS.includes(e.position));
   const canEdit = can(ctx.roles, 'vehicule.modifier');
@@ -94,6 +103,52 @@ export default async function VehiclePage(props: PageProps<'/vehicules/[id]'>) {
         </section>
       )}
 
+      {compliance.blocking.length > 0 && (
+        <p className="alert alert-error" style={{ marginBottom: 16 }} role="alert">
+          {compliance.blocking.join(' et ')} : ce véhicule ne peut plus être planifié ni pris par un chauffeur tant que la fiche n’est pas mise à jour.
+        </p>
+      )}
+
+      <section className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head">
+          <h2 className="section-title">Assurance et contrôle technique</h2>
+          {canEdit && (
+            <Link href={`/vehicules/${vehicle.id}/modifier`} className="small">
+              Mettre à jour
+            </Link>
+          )}
+        </div>
+        <div className="card-body grid-2">
+          <dl className="kv">
+            <dt>Assurance</dt>
+            <dd>
+              <ExpiryBadge status={compliance.insurance} />
+            </dd>
+            <dt>Assureur</dt>
+            <dd>{vehicle.insurer || '·'}</dd>
+            <dt>N° de contrat</dt>
+            <dd className="mono">{vehicle.insurance_policy || '·'}</dd>
+            <dt>Date de début</dt>
+            <dd>{formatDate(vehicle.insurance_start_on) || '·'}</dd>
+            <dt>Date d’échéance</dt>
+            <dd>{formatDate(vehicle.insurance_end_on) || 'Non renseignée'}</dd>
+          </dl>
+          <dl className="kv">
+            <dt>Contrôle technique</dt>
+            <dd>
+              <ExpiryBadge status={compliance.ct} />
+            </dd>
+            <dt>Dernier contrôle</dt>
+            <dd>{formatDate(vehicle.ct_last_on) || '·'}</dd>
+            <dt>Date d’échéance</dt>
+            <dd>
+              {compliance.ctDue ? formatDate(compliance.ctDue) : 'Renseignez le dernier contrôle ou la 1re immatriculation'}
+              {compliance.ctDue && !vehicle.ct_expires_on && <span className="muted small"> (calculée)</span>}
+            </dd>
+          </dl>
+        </div>
+      </section>
+
       <div className="grid-2" style={{ marginBottom: 16 }}>
         <section className="card">
           <div className="card-head">
@@ -115,16 +170,6 @@ export default async function VehiclePage(props: PageProps<'/vehicules/[id]'>) {
               <dd className="mono">{vehicle.vin || '·'}</dd>
               <dt>1re immatriculation</dt>
               <dd>{formatDate(vehicle.first_registration_on) || '·'}</dd>
-              <dt>Contrôle technique</dt>
-              <dd>
-                {ctDue ? (
-                  <>
-                    avant le {formatDate(ctDue)} <ExpiryBadge status={expiryStatus(ctDue, today)} />
-                  </>
-                ) : (
-                  'Renseignez la date de première immatriculation'
-                )}
-              </dd>
               <dt>Propriétaire ou loueur</dt>
               <dd>{vehicle.owner || '·'}</dd>
               {vehicle.notes && (
@@ -299,10 +344,28 @@ export default async function VehiclePage(props: PageProps<'/vehicules/[id]'>) {
         )}
       </section>
 
+      <section className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head">
+          <h2 className="section-title">Planning du véhicule, 14 prochains jours</h2>
+        </div>
+        {shifts.length === 0 ? (
+          <p className="empty">Aucune planification.</p>
+        ) : (
+          <ul className="card-body stack-sm" style={{ margin: 0, listStyle: 'none' }}>
+            {shifts.map((s) => (
+              <li key={s.id}>
+                <Link href={`/planning?jour=${s.day}`}>{formatWeekday(s.day)}</Link> · {formatRange(s.start_time, s.end_time)} · {s.employee_name ?? 'sans salarié'}
+                {s.route_name ? ` · tournée ${s.route_name}` : ''}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <div className="grid-2" style={{ marginBottom: 16 }}>
         <section className="card">
           <div className="card-head">
-            <h2 className="section-title">Dernières inspections</h2>
+            <h2 className="section-title">Derniers états des lieux (départ et fin de journée)</h2>
           </div>
           <div className="card-body stack">
             {inspections.length === 0 && <p className="muted">Aucune inspection pour le moment.</p>}
@@ -326,16 +389,42 @@ export default async function VehiclePage(props: PageProps<'/vehicules/[id]'>) {
                 </Link>
               )}
             </div>
-            <div className="card-body stack-sm">
+            <div className="card-body stack">
               {damages.length === 0 && <p className="muted">Aucun dommage déclaré.</p>}
-              {damages.map((d) => (
-                <Link key={d.id} href={`/dommages/${d.id}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, textDecoration: 'none' }}>
-                  <span>
-                    <strong>{labelOf(DAMAGE_TYPES, d.type)}</strong> <span className="small muted">{formatDate(d.occurred_at.slice(0, 10))}</span>
-                  </span>
-                  <DamageStatusBadge status={d.status} />
-                </Link>
-              ))}
+              {damages.length > 0 && (
+                <div className="grid-2">
+                  <div>
+                    <p className="small muted" style={{ textAlign: 'center' }}>
+                      Dégâts non clôturés
+                    </p>
+                    <VehicleSvg counts={openZoneCounts} label="Zones avec un dégât en cours" />
+                  </div>
+                  <div>
+                    <p className="small muted" style={{ textAlign: 'center' }}>
+                      Historique complet
+                    </p>
+                    <VehicleSvg counts={zoneCounts} label="Zones touchées depuis l’entrée dans la flotte" />
+                  </div>
+                </div>
+              )}
+              <ul className="timeline">
+                {damages.map((d) => (
+                  <li key={d.id}>
+                    <Link href={`/dommages/${d.id}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, textDecoration: 'none' }}>
+                      <strong>
+                        {labelOf(DAMAGE_TYPES, d.type)}
+                        {d.zones ? ` · ${zonesLabel(d.zones)}` : ''}
+                      </strong>
+                      <DamageStatusBadge status={d.status} />
+                    </Link>
+                    <div className="small muted">
+                      Constaté le {formatDateTime(d.occurred_at)}
+                      {d.employee_name ? `, conducteur ${d.employee_name}` : ''}
+                      {d.reporter_name ? `, déclaré par ${d.reporter_name}` : ''}. {d.description.slice(0, 120)}
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </div>
           </section>
         )}

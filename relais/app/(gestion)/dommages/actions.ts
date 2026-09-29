@@ -8,6 +8,7 @@ import { attachToDamage, setDamageCosts } from '@/lib/data/cases';
 import { saveUpload, saveUploads } from '@/lib/data/files';
 import { changeDamageStatus, createDamage } from '@/lib/data/operations';
 import { parisLocalToIso } from '@/lib/domain/dates';
+import { parseZones } from '@/lib/domain/zones';
 import { DAMAGE_STATUSES, DAMAGE_TYPES, SEVERITIES } from '@/lib/domain/labels';
 import { type FormState, checked, date, id, oneOf, optEuros, optId, optText, text, time, toFormState } from '@/lib/forms';
 
@@ -27,6 +28,7 @@ export async function createDamageAction(_: FormState, formData: FormData): Prom
       photos,
       injured: checked(formData, 'injured'),
       locationText: optText(formData, 'location', 200),
+      zones: parseZones(String(formData.get('zones') ?? '')),
     });
   } catch (error) {
     return toFormState(error);

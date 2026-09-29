@@ -14,6 +14,8 @@ export type Candidate = {
   plannedRoutesThatDay: number;
   knowsRoute: boolean;
   daysPlannedThisWeek: number;
+  /** Raison qui empêche de prendre ce créneau (déjà planifié sur les mêmes heures, par exemple). */
+  conflict?: string | null;
 };
 
 export type RankedCandidate = Candidate & { score: number; reasons: string[] };
@@ -41,6 +43,10 @@ export function rankReplacements(
       excluded.push({ employeeId: c.employeeId, name: c.name, reason: `Pas de permis ${requiredCategory}` });
       continue;
     }
+    if (c.conflict) {
+      excluded.push({ employeeId: c.employeeId, name: c.name, reason: c.conflict });
+      continue;
+    }
 
     const reasons: string[] = [];
     let score = 0;
@@ -48,7 +54,7 @@ export function rankReplacements(
       score += 100;
       reasons.push('Libre ce jour');
     } else {
-      reasons.push('Déjà affecté ce jour');
+      reasons.push('Autre créneau ce jour, sans chevauchement');
     }
     if (c.knowsRoute) {
       score += 20;

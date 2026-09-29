@@ -20,7 +20,7 @@ const NAV: { module: Module; href: string; label: string }[] = [
   { module: 'paie', href: '/paie', label: 'Paie' },
   { module: 'imports', href: '/imports', label: 'Imports CSV' },
   { module: 'journal', href: '/journal', label: 'Journal' },
-  { module: 'parametres', href: '/parametres', label: 'Paramètres' },
+  { module: 'parametres', href: '/parametres', label: 'Membres et accès' },
 ];
 
 export default async function GestionLayout({ children }: { children: React.ReactNode }) {

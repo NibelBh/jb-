@@ -1,13 +1,15 @@
 import 'server-only';
 import type { Ctx } from '../auth';
 import { type Db, all, get, run, transaction } from '../db';
-import { formatDateTime } from '../domain/dates';
+import { formatDateTime, parisDate } from '../domain/dates';
 import { DAMAGE_STATUSES, labelOf } from '../domain/labels';
 import { findDriverAt, type AssignmentInterval } from '../domain/fines';
 import { CHECKLIST, type InspectionAnswers, type ItemResult, checkOdometer, formatKm, worstResult } from '../domain/inspection';
 import { logAudit } from './audit';
 import { fullName, getEmployee } from './employees';
 import { notify } from './notifications';
+import { vehicleCompliance } from '../domain/vehicles';
+import { parseZones } from '../domain/zones';
 import { getVehicle } from './vehicles';
 
 type Actor = Pick<Ctx, 'orgId' | 'userId' | 'name' | 'origin'>;
@@ -18,12 +20,13 @@ export type OpenAssignment = {
   plate: string;
   started_at: string;
   start_km: number | null;
+  shift_id: number | null;
 };
 
 export function openAssignmentFor(db: Db, orgId: number, employeeId: number): OpenAssignment | undefined {
   return get<OpenAssignment>(
     db,
-    `SELECT a.id, a.vehicle_id, v.plate, a.started_at, a.start_km
+    `SELECT a.id, a.vehicle_id, v.plate, a.started_at, a.start_km, a.shift_id
        FROM assignments a JOIN vehicles v ON v.id = a.vehicle_id
       WHERE a.org_id = ? AND a.employee_id = ? AND a.ended_at IS NULL`,
     orgId,
@@ -43,6 +46,48 @@ export function pendingInspectionFor(db: Db, orgId: number, employeeId: number):
   );
 }
 
+export type TodayShift = { id: number; day: string; start_time: string; end_time: string; route_name: string | null; vehicle_id: number | null; status: string };
+
+/** Créneau du jour sur lequel le salarié prend son service : celui en cours, sinon le prochain prévu. */
+export function currentShiftFor(db: Db, orgId: number, employeeId: number, day: string): TodayShift | undefined {
+  return get<TodayShift>(
+    db,
+    `SELECT id, day, start_time, end_time, route_name, vehicle_id, status FROM shifts
+      WHERE org_id = ? AND employee_id = ? AND day = ? AND status != 'realise'
+      ORDER BY status = 'en_cours' DESC, start_time LIMIT 1`,
+    orgId,
+    employeeId,
+    day,
+  );
+}
+
+/** Nom du collègue pour qui ce véhicule est encore prévu aujourd'hui, s'il y en a un. */
+export function vehicleReservedFor(db: Db, orgId: number, vehicleId: number, employeeId: number, day: string): string | null {
+  const row = get<{ name: string }>(
+    db,
+    `SELECT e.first_name || ' ' || e.last_name AS name FROM shifts s JOIN employees e ON e.id = s.employee_id
+      WHERE s.org_id = ? AND s.day = ? AND s.vehicle_id = ? AND s.employee_id != ? AND s.status = 'prevu' LIMIT 1`,
+    orgId,
+    day,
+    vehicleId,
+    employeeId,
+  );
+  return row?.name ?? null;
+}
+
+function startShift(db: Db, orgId: number, shiftId: number | null, vehicleId: number, at: string) {
+  if (!shiftId) return;
+  run(
+    db,
+    `UPDATE shifts SET status = 'en_cours', actual_start = COALESCE(actual_start, ?), vehicle_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+      WHERE id = ? AND org_id = ?`,
+    at,
+    vehicleId,
+    shiftId,
+    orgId,
+  );
+}
+
 export type InspectionInput = {
   employeeId: number;
   odometer: number;
@@ -50,6 +95,8 @@ export type InspectionInput = {
   answers: InspectionAnswers;
   photos: Record<string, number>;
   comment: string;
+  /** Nouveau dégât constaté pendant l'état des lieux (fin de journée). */
+  damage?: { zones: string[]; description: string; photos: number[]; severity: string } | null;
 };
 
 export type InspectionOutcome =
@@ -80,6 +127,17 @@ export function startAssignment(db: Db, ctx: Actor, vehicleId: number, input: In
   if (pendingInspectionFor(db, ctx.orgId, employee.id)) {
     return { ok: false, error: 'Une inspection attend la validation de votre responsable.' };
   }
+  const today = parisDate();
+  const shift = currentShiftFor(db, ctx.orgId, employee.id, today);
+  if (!shift) return { ok: false, error: 'Vous n’êtes pas planifié(e) aujourd’hui. Contactez votre responsable.' };
+  const reserved = vehicleReservedFor(db, ctx.orgId, vehicle.id, employee.id, today);
+  if (reserved) {
+    return { ok: false, error: `Le véhicule ${vehicle.plate} est prévu pour ${reserved} aujourd’hui. Prenez le véhicule prévu pour vous ou appelez votre responsable.` };
+  }
+  const compliance = vehicleCompliance(vehicle, today);
+  if (compliance.blocking.length) {
+    return { ok: false, error: `Le véhicule ${vehicle.plate} ne peut pas rouler : ${compliance.blocking.join(', ').toLowerCase()}. Contactez votre responsable.` };
+  }
   const odo = checkOdometer(input.odometer, vehicle.current_km);
   if (!odo.ok && (odo.reason === 'invalide' || !input.confirmOdometer)) {
     return { ok: false, error: odo.message, needsOdometerConfirmation: odo.reason !== 'invalide' };
@@ -92,8 +150,8 @@ export function startAssignment(db: Db, ctx: Actor, vehicleId: number, input: In
   return transaction(db, () => {
     const inspectionId = run(
       db,
-      `INSERT INTO inspections (org_id, vehicle_id, employee_id, kind, odometer, answers, worst, photos, status, comment, created_at)
-       VALUES (?, ?, ?, 'depart', ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO inspections (org_id, vehicle_id, employee_id, kind, odometer, answers, worst, photos, status, comment, created_at, shift_id)
+       VALUES (?, ?, ?, 'depart', ?, ?, ?, ?, ?, ?, ?, ?)`,
       ctx.orgId,
       vehicle.id,
       employee.id,
@@ -104,6 +162,7 @@ export function startAssignment(db: Db, ctx: Actor, vehicleId: number, input: In
       worst === 'bloquant' ? 'en_attente' : 'validee',
       input.comment || null,
       now,
+      shift.id,
     ).id;
     recordOdometer(db, ctx, vehicle.id, vehicle.plate, vehicle.current_km, input.odometer, 'inspection de départ');
 
@@ -117,7 +176,7 @@ export function startAssignment(db: Db, ctx: Actor, vehicleId: number, input: In
         changes: [{ field: 'status', label: 'Statut', before: vehicle.status, after: 'bloque' }],
       });
       notify(db, ctx.orgId, {
-        roles: ['admin', 'flotte', 'exploitation'],
+        roles: ['admin', 'manager', 'flotte', 'exploitation'],
         kind: 'inspection',
         title: `Inspection de départ ${vehicle.plate} : problème bloquant`,
         body: `${driver} : ${problemsText(input.answers)}. Véhicule bloqué en attente de validation.`,
@@ -126,10 +185,10 @@ export function startAssignment(db: Db, ctx: Actor, vehicleId: number, input: In
       return { ok: true, kind: 'bloque', vehicleId: vehicle.id, plate: vehicle.plate } as const;
     }
 
-    openAssignment(db, ctx, vehicle.id, vehicle.plate, employee.id, driver, input.odometer, inspectionId, now, 'inspection de départ, application mobile');
+    openAssignment(db, ctx, vehicle.id, vehicle.plate, employee.id, driver, input.odometer, inspectionId, now, 'inspection de départ, application mobile', shift.id);
     if (worst === 'mineur') {
       notify(db, ctx.orgId, {
-        roles: ['flotte'],
+        roles: ['manager', 'flotte'],
         kind: 'inspection',
         title: `Point à surveiller sur ${vehicle.plate}`,
         body: `${driver} : ${problemsText(input.answers)}.`,
@@ -151,10 +210,11 @@ function openAssignment(
   inspectionId: number | null,
   at: string,
   how: string,
+  shiftId: number | null,
 ) {
   const id = run(
     db,
-    `INSERT INTO assignments (org_id, vehicle_id, employee_id, started_at, start_inspection_id, start_km, source) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO assignments (org_id, vehicle_id, employee_id, started_at, start_inspection_id, start_km, source, shift_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     ctx.orgId,
     vehicleId,
     employeeId,
@@ -162,7 +222,9 @@ function openAssignment(
     inspectionId,
     km,
     ctx.origin === 'mobile' ? 'application' : 'back-office',
+    shiftId,
   ).id;
+  startShift(db, ctx.orgId, shiftId, vehicleId, at);
   run(db, `UPDATE vehicles SET status = 'en_tournee' WHERE id = ? AND org_id = ?`, vehicleId, ctx.orgId);
   logAudit(db, ctx, {
     action: 'affectation',
@@ -189,6 +251,9 @@ function recordOdometer(db: Db, ctx: Actor, vehicleId: number, plate: string, be
 export function endAssignment(db: Db, ctx: Actor, input: InspectionInput): InspectionOutcome {
   const open = openAssignmentFor(db, ctx.orgId, input.employeeId);
   if (!open) return { ok: false, error: 'Aucun véhicule en cours à rendre.' };
+  if (input.damage && (input.damage.zones.length === 0 || !input.damage.description.trim())) {
+    return { ok: false, error: 'Pour signaler un nouveau dégât, indiquez sa zone sur le schéma et décrivez-le.' };
+  }
   const vehicle = getVehicle(db, ctx.orgId, open.vehicle_id);
   const employee = getEmployee(db, ctx.orgId, input.employeeId);
   if (!vehicle || !employee) return { ok: false, error: 'Véhicule ou salarié introuvable.' };
@@ -205,8 +270,8 @@ export function endAssignment(db: Db, ctx: Actor, input: InspectionInput): Inspe
   return transaction(db, () => {
     const inspectionId = run(
       db,
-      `INSERT INTO inspections (org_id, vehicle_id, employee_id, kind, odometer, answers, worst, photos, status, comment, created_at)
-       VALUES (?, ?, ?, 'retour', ?, ?, ?, ?, 'validee', ?, ?)`,
+      `INSERT INTO inspections (org_id, vehicle_id, employee_id, kind, odometer, answers, worst, photos, status, comment, created_at, shift_id)
+       VALUES (?, ?, ?, 'retour', ?, ?, ?, ?, 'validee', ?, ?, ?)`,
       ctx.orgId,
       vehicle.id,
       employee.id,
@@ -216,7 +281,19 @@ export function endAssignment(db: Db, ctx: Actor, input: InspectionInput): Inspe
       JSON.stringify(input.photos),
       input.comment || null,
       now,
+      open.shift_id,
     ).id;
+    // Fin de journée : le créneau est réalisé, avec l'heure réelle de restitution.
+    if (open.shift_id) {
+      run(
+        db,
+        `UPDATE shifts SET status = 'realise', actual_end = ?, closed_by = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND org_id = ?`,
+        now,
+        'État de fin de journée',
+        open.shift_id,
+        ctx.orgId,
+      );
+    }
     run(
       db,
       `UPDATE assignments SET ended_at = ?, end_inspection_id = ?, end_km = ? WHERE id = ? AND org_id = ?`,
@@ -238,7 +315,20 @@ export function endAssignment(db: Db, ctx: Actor, input: InspectionInput): Inspe
     });
 
     let damageId: number | undefined;
-    if (worst !== 'ok') {
+    if (input.damage) {
+      damageId = createDamage(db, ctx, {
+        vehicleId: vehicle.id,
+        employeeId: employee.id,
+        type: 'carrosserie',
+        severity: input.damage.severity,
+        description: `${input.damage.description.trim()} (constaté à l’état de fin de journée).`,
+        occurredAt: now,
+        photos: [...input.damage.photos, ...Object.values(input.photos)],
+        inspectionId,
+        injured: false,
+        zones: input.damage.zones,
+      });
+    } else if (worst !== 'ok') {
       damageId = createDamage(db, ctx, {
         vehicleId: vehicle.id,
         employeeId: employee.id,
@@ -249,6 +339,7 @@ export function endAssignment(db: Db, ctx: Actor, input: InspectionInput): Inspe
         photos: Object.values(input.photos),
         inspectionId,
         injured: false,
+        zones: [],
       });
     }
     return { ok: true, kind: 'retour', vehicleId: vehicle.id, plate: vehicle.plate, damageId } as const;
@@ -257,9 +348,9 @@ export function endAssignment(db: Db, ctx: Actor, input: InspectionInput): Inspe
 
 /** Décision du responsable sur une inspection bloquante. */
 export function reviewInspection(db: Db, ctx: Actor, inspectionId: number, decision: 'autoriser' | 'refuser', note: string): string | null {
-  const inspection = get<{ id: number; vehicle_id: number; employee_id: number; odometer: number; status: string }>(
+  const inspection = get<{ id: number; vehicle_id: number; employee_id: number; odometer: number; status: string; shift_id: number | null }>(
     db,
-    `SELECT id, vehicle_id, employee_id, odometer, status FROM inspections WHERE id = ? AND org_id = ?`,
+    `SELECT id, vehicle_id, employee_id, odometer, status, shift_id FROM inspections WHERE id = ? AND org_id = ?`,
     inspectionId,
     ctx.orgId,
   );
@@ -289,7 +380,7 @@ export function reviewInspection(db: Db, ctx: Actor, inspectionId: number, decis
         entityId: vehicle.id,
         summary: `${ctx.name} a autorisé le départ de ${vehicle.plate} malgré l’inspection bloquante : ${note.trim()}`,
       });
-      openAssignment(db, ctx, vehicle.id, vehicle.plate, employee.id, driver, inspection.odometer, inspection.id, now, 'départ autorisé par le responsable');
+      openAssignment(db, ctx, vehicle.id, vehicle.plate, employee.id, driver, inspection.odometer, inspection.id, now, 'départ autorisé par le responsable', inspection.shift_id);
     } else {
       logAudit(db, ctx, {
         action: 'refus_depart',
@@ -468,6 +559,8 @@ export type DamageInput = {
   latitude?: number | null;
   longitude?: number | null;
   locationText?: string | null;
+  /** Zones du véhicule touchées (schéma). */
+  zones: string[];
 };
 
 export function createDamage(db: Db, ctx: Actor, input: DamageInput): number {
@@ -478,8 +571,8 @@ export function createDamage(db: Db, ctx: Actor, input: DamageInput): number {
   const id = run(
     db,
     `INSERT INTO damages (org_id, vehicle_id, employee_id, reported_by, type, severity, status, description, occurred_at,
-       latitude, longitude, location_text, injured, photos, inspection_id)
-     VALUES (?, ?, ?, ?, ?, ?, 'nouveau', ?, ?, ?, ?, ?, ?, ?, ?)`,
+       latitude, longitude, location_text, injured, photos, inspection_id, zones)
+     VALUES (?, ?, ?, ?, ?, ?, 'nouveau', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ctx.orgId,
     vehicle.id,
     employee?.id ?? null,
@@ -494,6 +587,7 @@ export function createDamage(db: Db, ctx: Actor, input: DamageInput): number {
     input.injured ? 1 : 0,
     JSON.stringify(input.photos),
     input.inspectionId ?? null,
+    parseZones(input.zones.join(',')).join(','),
   ).id;
   run(
     db,
@@ -512,7 +606,7 @@ export function createDamage(db: Db, ctx: Actor, input: DamageInput): number {
   });
   const photos = input.photos.length;
   notify(db, ctx.orgId, {
-    roles: ['admin', 'flotte', 'exploitation'],
+    roles: ['admin', 'manager', 'flotte', 'exploitation'],
     kind: input.type === 'accident' ? 'accident' : 'dommage',
     title: `${who} a déclaré ${input.type === 'accident' ? 'un accident' : 'un dommage'} sur ${vehicle.plate}`,
     body: `${input.description.slice(0, 140)}${photos ? ` (${photos} photo${photos > 1 ? 's' : ''})` : ''}${

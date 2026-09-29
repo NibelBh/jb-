@@ -4,7 +4,7 @@ import { type Db, get, run, transaction } from '../db';
 import { formatDate } from '../domain/dates';
 import { type DocumentEntity, documentTypeLabel } from '../domain/documents';
 import { hashPassword } from '../domain/password';
-import type { Role } from '../domain/roles';
+import { type Role, roleLabel } from '../domain/roles';
 import { type Change, diff, logAudit } from './audit';
 import { type EmployeeRow, fullName, getEmployee } from './employees';
 import { type VehicleRow, getVehicle } from './vehicles';
@@ -15,7 +15,8 @@ type Actor = Pick<Ctx, 'orgId' | 'userId' | 'name' | 'origin'>;
 
 export type VehicleInput = Pick<
   VehicleRow,
-  'plate' | 'vin' | 'brand' | 'model' | 'year' | 'type' | 'energy' | 'first_registration_on' | 'owner' | 'notes'
+  | 'plate' | 'vin' | 'brand' | 'model' | 'year' | 'type' | 'energy' | 'first_registration_on' | 'owner' | 'notes'
+  | 'insurer' | 'insurance_policy' | 'insurance_start_on' | 'insurance_end_on' | 'ct_last_on' | 'ct_expires_on'
 > & { initial_km: number };
 
 const VEHICLE_LABELS: Partial<Record<keyof VehicleRow, string>> = {
@@ -30,7 +31,24 @@ const VEHICLE_LABELS: Partial<Record<keyof VehicleRow, string>> = {
   owner: 'Propriétaire ou loueur',
   notes: 'Notes',
   initial_km: 'Kilométrage initial',
+  insurer: 'Assureur',
+  insurance_policy: 'N° de contrat d’assurance',
+  insurance_start_on: 'Début d’assurance',
+  insurance_end_on: 'Fin d’assurance',
+  ct_last_on: 'Dernier contrôle technique',
+  ct_expires_on: 'Échéance du contrôle technique',
 };
+
+/** Contrôles de cohérence des dates d'assurance et de contrôle technique. */
+function vehicleDatesError(input: VehicleInput): string | null {
+  if (input.insurance_start_on && input.insurance_end_on && input.insurance_end_on < input.insurance_start_on) {
+    return 'La date d’échéance de l’assurance doit être après sa date de début.';
+  }
+  if (input.ct_last_on && input.ct_expires_on && input.ct_expires_on <= input.ct_last_on) {
+    return 'L’échéance du contrôle technique doit être après la date du dernier contrôle.';
+  }
+  return null;
+}
 
 export function normalizePlate(value: string): string {
   const compact = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -44,10 +62,13 @@ export function createVehicle(db: Db, ctx: Actor, input: VehicleInput): { id?: n
   if (get(db, `SELECT id FROM vehicles WHERE org_id = ? AND plate = ?`, ctx.orgId, plate)) {
     return { error: `Le véhicule ${plate} existe déjà.` };
   }
+  const dates = vehicleDatesError(input);
+  if (dates) return { error: dates };
   const id = run(
     db,
-    `INSERT INTO vehicles (org_id, plate, vin, brand, model, year, type, energy, first_registration_on, initial_km, current_km, owner, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO vehicles (org_id, plate, vin, brand, model, year, type, energy, first_registration_on, initial_km, current_km, owner, notes,
+       insurer, insurance_policy, insurance_start_on, insurance_end_on, ct_last_on, ct_expires_on)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ctx.orgId,
     plate,
     input.vin,
@@ -61,6 +82,12 @@ export function createVehicle(db: Db, ctx: Actor, input: VehicleInput): { id?: n
     input.initial_km,
     input.owner,
     input.notes,
+    input.insurer,
+    input.insurance_policy,
+    input.insurance_start_on,
+    input.insurance_end_on,
+    input.ct_last_on,
+    input.ct_expires_on,
   ).id;
   logAudit(db, ctx, { action: 'creation', entityType: 'vehicle', entityId: id, summary: `Le véhicule ${plate} a été ajouté à la flotte.` });
   return { id };
@@ -73,13 +100,16 @@ export function updateVehicle(db: Db, ctx: Actor, id: number, input: VehicleInpu
   if (plate !== vehicle.plate && get(db, `SELECT id FROM vehicles WHERE org_id = ? AND plate = ?`, ctx.orgId, plate)) {
     return `Le véhicule ${plate} existe déjà.`;
   }
+  const dates = vehicleDatesError(input);
+  if (dates) return dates;
   const next = { ...input, plate };
   const changes = diff(vehicle as unknown as Record<string, unknown>, next, VEHICLE_LABELS as Record<string, string>);
   if (changes.length === 0) return null;
   run(
     db,
     `UPDATE vehicles SET plate = ?, vin = ?, brand = ?, model = ?, year = ?, type = ?, energy = ?, first_registration_on = ?,
-       initial_km = ?, owner = ?, notes = ? WHERE id = ? AND org_id = ?`,
+       initial_km = ?, owner = ?, notes = ?, insurer = ?, insurance_policy = ?, insurance_start_on = ?, insurance_end_on = ?,
+       ct_last_on = ?, ct_expires_on = ? WHERE id = ? AND org_id = ?`,
     plate,
     input.vin,
     input.brand,
@@ -91,6 +121,12 @@ export function updateVehicle(db: Db, ctx: Actor, id: number, input: VehicleInpu
     input.initial_km,
     input.owner,
     input.notes,
+    input.insurer,
+    input.insurance_policy,
+    input.insurance_start_on,
+    input.insurance_end_on,
+    input.ct_last_on,
+    input.ct_expires_on,
     id,
     ctx.orgId,
   );
@@ -123,6 +159,15 @@ const EMPLOYEE_LABELS: Partial<Record<keyof EmployeeRow, string>> = {
   payroll_id: 'Matricule paie',
   first_name: 'Prénom',
   last_name: 'Nom',
+  birth_date: 'Date de naissance',
+  birth_place: 'Lieu de naissance',
+  nationality: 'Nationalité',
+  address: 'Adresse',
+  postal_code: 'Code postal',
+  city: 'Ville',
+  emergency_name: 'Contact d’urgence',
+  emergency_phone: 'Téléphone d’urgence',
+  licence_issued_on: 'Date d’obtention du permis',
   email: 'E-mail',
   phone: 'Téléphone',
   position: 'Poste',
@@ -143,19 +188,37 @@ function payrollIdTaken(db: Db, orgId: number, payrollId: string | null, exceptI
   return row !== undefined && row.id !== exceptId;
 }
 
+function employeeDatesError(input: EmployeeInput): string | null {
+  if (input.hired_on && input.left_on && input.left_on < input.hired_on) return 'La date de sortie doit être après la date d’arrivée.';
+  if (input.licence_issued_on && input.licence_expires_on && input.licence_expires_on <= input.licence_issued_on) {
+    return 'La fin de validité du permis doit être après sa date d’obtention.';
+  }
+  if (input.birth_date && input.hired_on && input.birth_date >= input.hired_on) return 'La date de naissance doit être avant la date d’arrivée.';
+  return null;
+}
+
 export function createEmployee(db: Db, ctx: Actor, input: EmployeeInput): { id?: number; error?: string } {
   if (payrollIdTaken(db, ctx.orgId, input.payroll_id)) return { error: `Le matricule ${input.payroll_id} est déjà attribué.` };
+  const dates = employeeDatesError(input);
+  if (dates) return { error: dates };
   const id = run(
     db,
-    `INSERT INTO employees (org_id, payroll_id, first_name, last_name, email, phone, position, contract_type, status, hired_on, left_on,
-       licence_number, licence_categories, licence_expires_on, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO employees (org_id, payroll_id, first_name, last_name, birth_date, birth_place, nationality, address, postal_code, city, email, phone, emergency_name, emergency_phone, position, contract_type, status, hired_on, left_on, licence_number, licence_categories, licence_issued_on, licence_expires_on, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ctx.orgId,
     input.payroll_id,
     input.first_name,
     input.last_name,
+    input.birth_date,
+    input.birth_place,
+    input.nationality,
+    input.address,
+    input.postal_code,
+    input.city,
     input.email,
     input.phone,
+    input.emergency_name,
+    input.emergency_phone,
     input.position,
     input.contract_type,
     input.status,
@@ -163,6 +226,7 @@ export function createEmployee(db: Db, ctx: Actor, input: EmployeeInput): { id?:
     input.left_on,
     input.licence_number,
     input.licence_categories,
+    input.licence_issued_on,
     input.licence_expires_on,
     input.notes,
   ).id;
@@ -174,19 +238,28 @@ export function updateEmployee(db: Db, ctx: Actor, id: number, input: EmployeeIn
   const employee = getEmployee(db, ctx.orgId, id);
   if (!employee) return 'Salarié introuvable.';
   if (payrollIdTaken(db, ctx.orgId, input.payroll_id, id)) return `Le matricule ${input.payroll_id} est déjà attribué.`;
+  const dates = employeeDatesError(input);
+  if (dates) return dates;
   const changes = diff(employee as unknown as Record<string, unknown>, input, EMPLOYEE_LABELS as Record<string, string>);
   if (changes.length === 0) return null;
   transaction(db, () => {
     run(
       db,
-      `UPDATE employees SET payroll_id = ?, first_name = ?, last_name = ?, email = ?, phone = ?, position = ?, contract_type = ?, status = ?,
-         hired_on = ?, left_on = ?, licence_number = ?, licence_categories = ?, licence_expires_on = ?, notes = ?
+      `UPDATE employees SET payroll_id = ?, first_name = ?, last_name = ?, birth_date = ?, birth_place = ?, nationality = ?, address = ?, postal_code = ?, city = ?, email = ?, phone = ?, emergency_name = ?, emergency_phone = ?, position = ?, contract_type = ?, status = ?, hired_on = ?, left_on = ?, licence_number = ?, licence_categories = ?, licence_issued_on = ?, licence_expires_on = ?, notes = ?
        WHERE id = ? AND org_id = ?`,
       input.payroll_id,
       input.first_name,
       input.last_name,
+      input.birth_date,
+      input.birth_place,
+      input.nationality,
+      input.address,
+      input.postal_code,
+      input.city,
       input.email,
       input.phone,
+      input.emergency_name,
+      input.emergency_phone,
       input.position,
       input.contract_type,
       input.status,
@@ -194,6 +267,7 @@ export function updateEmployee(db: Db, ctx: Actor, id: number, input: EmployeeIn
       input.left_on,
       input.licence_number,
       input.licence_categories,
+      input.licence_issued_on,
       input.licence_expires_on,
       input.notes,
       id,
@@ -269,6 +343,22 @@ export function addDocument(
     if (input.syncLicence !== false && input.entity === 'employee' && input.type === 'permis' && input.expiresOn) {
       run(db, `UPDATE employees SET licence_expires_on = ? WHERE id = ? AND org_id = ?`, input.expiresOn, input.entityId, ctx.orgId);
     }
+    // Attestation d'assurance ou procès-verbal de contrôle technique : la fiche véhicule suit le document le plus récent.
+    if (input.entity === 'vehicle' && input.type === 'assurance' && input.expiresOn) {
+      run(
+        db,
+        `UPDATE vehicles SET insurance_start_on = COALESCE(?, insurance_start_on), insurance_end_on = ?, insurance_policy = COALESCE(?, insurance_policy)
+          WHERE id = ? AND org_id = ? AND (insurance_end_on IS NULL OR insurance_end_on <= ?)`,
+        input.issuedOn, input.expiresOn, input.reference, input.entityId, ctx.orgId, input.expiresOn,
+      );
+    }
+    if (input.entity === 'vehicle' && input.type === 'controle_technique' && input.issuedOn) {
+      run(
+        db,
+        `UPDATE vehicles SET ct_last_on = ?, ct_expires_on = ? WHERE id = ? AND org_id = ? AND (ct_last_on IS NULL OR ct_last_on <= ?)`,
+        input.issuedOn, input.expiresOn, input.entityId, ctx.orgId, input.issuedOn,
+      );
+    }
     logAudit(db, ctx, {
       action: 'document',
       entityType: input.entity,
@@ -297,7 +387,42 @@ export function deleteDocument(db: Db, ctx: Actor, documentId: number): void {
   });
 }
 
-// ---------- Utilisateurs ----------
+// ---------- Membres (comptes d'accès) ----------
+
+type UserRecord = { id: number; name: string; login: string; roles: string; active: number; employee_id: number | null };
+
+function findUser(db: Db, orgId: number, userId: number): UserRecord | undefined {
+  return get<UserRecord>(
+    db,
+    `SELECT id, name, login, roles, active, employee_id FROM users WHERE id = ? AND org_id = ? AND deleted_at IS NULL`,
+    userId,
+    orgId,
+  );
+}
+
+/** Nombre d'administrateurs actifs, en excluant éventuellement un compte. */
+function activeAdmins(db: Db, orgId: number, exceptId: number): number {
+  const rows = get<{ n: number }>(
+    db,
+    `SELECT COUNT(*) AS n FROM users WHERE org_id = ? AND id != ? AND active = 1 AND deleted_at IS NULL AND (',' || roles || ',') LIKE '%,admin,%'`,
+    orgId,
+    exceptId,
+  );
+  return rows?.n ?? 0;
+}
+
+function loginTaken(db: Db, login: string, exceptId?: number): boolean {
+  const row = get<{ id: number }>(db, `SELECT id FROM users WHERE login = ?`, login);
+  return row !== undefined && row.id !== exceptId;
+}
+
+function employeeLinkError(db: Db, orgId: number, employeeId: number | null, exceptUserId?: number): string | null {
+  if (employeeId === null) return null;
+  if (!getEmployee(db, orgId, employeeId)) return 'Salarié introuvable.';
+  const other = get<{ id: number }>(db, `SELECT id FROM users WHERE org_id = ? AND employee_id = ? AND deleted_at IS NULL`, orgId, employeeId);
+  if (other && other.id !== exceptUserId) return 'Ce salarié a déjà un accès.';
+  return null;
+}
 
 export function createUser(
   db: Db,
@@ -305,11 +430,11 @@ export function createUser(
   input: { name: string; login: string; password: string; roles: Role[]; employeeId: number | null },
 ): string | null {
   const login = input.login.trim().toLowerCase();
-  if (get(db, `SELECT id FROM users WHERE login = ?`, login)) return 'Cet identifiant est déjà utilisé.';
-  if (input.employeeId !== null) {
-    if (!getEmployee(db, ctx.orgId, input.employeeId)) return 'Salarié introuvable.';
-    if (get(db, `SELECT id FROM users WHERE org_id = ? AND employee_id = ?`, ctx.orgId, input.employeeId)) return 'Ce salarié a déjà un accès.';
-  }
+  if (input.roles.length === 0) return 'Choisissez au moins un niveau d’accès.';
+  if (loginTaken(db, login)) return 'Cet identifiant est déjà utilisé.';
+  if (input.roles.includes('chauffeur') && input.employeeId === null) return 'Un accès salarié doit être relié à une fiche du personnel.';
+  const link = employeeLinkError(db, ctx.orgId, input.employeeId);
+  if (link) return link;
   const id = run(
     db,
     `INSERT INTO users (org_id, employee_id, name, login, password_hash, roles) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -320,31 +445,79 @@ export function createUser(
     hashPassword(input.password),
     input.roles.join(','),
   ).id;
-  logAudit(db, ctx, { action: 'creation', entityType: 'user', entityId: id, summary: `Accès créé pour ${input.name} (${login}), rôles : ${input.roles.join(', ')}.` });
+  logAudit(db, ctx, { action: 'creation', entityType: 'user', entityId: id, summary: `Membre ajouté : ${input.name} (${login}), rôles : ${input.roles.map(roleLabel).join(', ')}.` });
   return null;
 }
 
-export function updateUserAccess(db: Db, ctx: Actor, userId: number, input: { roles: Role[]; active: boolean; password: string | null }): string | null {
-  const user = get<{ id: number; name: string; roles: string; active: number }>(
-    db,
-    `SELECT id, name, roles, active FROM users WHERE id = ? AND org_id = ?`,
-    userId,
-    ctx.orgId,
-  );
-  if (!user) return 'Utilisateur introuvable.';
+export function updateUser(
+  db: Db,
+  ctx: Actor,
+  userId: number,
+  input: { name: string; login: string; roles: Role[]; active: boolean; password: string | null; employeeId: number | null },
+): string | null {
+  const user = findUser(db, ctx.orgId, userId);
+  if (!user) return 'Membre introuvable.';
+  const login = input.login.trim().toLowerCase();
+  if (input.roles.length === 0) return 'Choisissez au moins un niveau d’accès.';
   if (user.id === ctx.userId && (!input.active || !input.roles.includes('admin'))) {
-    return 'Vous ne pouvez pas retirer vos propres droits d’administrateur.';
+    return 'Vous ne pouvez pas retirer vos propres droits d’administrateur ni désactiver votre propre compte.';
   }
+  const wasAdmin = user.active === 1 && user.roles.split(',').includes('admin');
+  const staysAdmin = input.active && input.roles.includes('admin');
+  if (wasAdmin && !staysAdmin && activeAdmins(db, ctx.orgId, user.id) === 0) return 'Il doit rester au moins un administrateur actif.';
+  if (loginTaken(db, login, user.id)) return 'Cet identifiant est déjà utilisé.';
+  if (input.roles.includes('chauffeur') && input.employeeId === null) return 'Un accès salarié doit être relié à une fiche du personnel.';
+  const link = employeeLinkError(db, ctx.orgId, input.employeeId, user.id);
+  if (link) return link;
+
   const changes: Change[] = [];
+  if (user.name !== input.name) changes.push({ field: 'name', label: 'Nom', before: user.name, after: input.name });
+  if (user.login !== login) changes.push({ field: 'login', label: 'Identifiant', before: user.login, after: login });
   if (user.roles !== input.roles.join(',')) changes.push({ field: 'roles', label: 'Rôles', before: user.roles, after: input.roles.join(',') });
   if (Boolean(user.active) !== input.active) changes.push({ field: 'active', label: 'Actif', before: Boolean(user.active), after: input.active });
+  if (user.employee_id !== input.employeeId) changes.push({ field: 'employee_id', label: 'Fiche salarié', before: user.employee_id, after: input.employeeId });
   if (input.password) changes.push({ field: 'password', label: 'Mot de passe', before: '***', after: '***' });
   if (changes.length === 0) return null;
   transaction(db, () => {
-    run(db, `UPDATE users SET roles = ?, active = ? WHERE id = ? AND org_id = ?`, input.roles.join(','), input.active ? 1 : 0, user.id, ctx.orgId);
+    run(
+      db,
+      `UPDATE users SET name = ?, login = ?, roles = ?, active = ?, employee_id = ? WHERE id = ? AND org_id = ?`,
+      input.name,
+      login,
+      input.roles.join(','),
+      input.active ? 1 : 0,
+      input.employeeId,
+      user.id,
+      ctx.orgId,
+    );
     if (input.password) run(db, `UPDATE users SET password_hash = ? WHERE id = ?`, hashPassword(input.password), user.id);
-    if (input.password || !input.active) run(db, `DELETE FROM sessions WHERE user_id = ?`, user.id);
-    logAudit(db, ctx, { action: 'acces', entityType: 'user', entityId: user.id, summary: `Accès de ${user.name} modifié (${changes.map((c) => c.label).join(', ')}).`, changes });
+    if (input.password || !input.active || user.login !== login) run(db, `DELETE FROM sessions WHERE user_id = ?`, user.id);
+    logAudit(db, ctx, { action: 'acces', entityType: 'user', entityId: user.id, summary: `Membre ${input.name} modifié (${changes.map((c) => c.label).join(', ')}).`, changes });
+  });
+  return null;
+}
+
+/**
+ * Suppression d'un membre : le compte ne peut plus se connecter et disparaît de la liste,
+ * mais son nom reste dans l'historique (journal, dossiers, inspections). L'identifiant est libéré.
+ */
+export function deleteUser(db: Db, ctx: Actor, userId: number): string | null {
+  const user = findUser(db, ctx.orgId, userId);
+  if (!user) return 'Membre introuvable.';
+  if (user.id === ctx.userId) return 'Vous ne pouvez pas supprimer votre propre compte.';
+  if (user.active === 1 && user.roles.split(',').includes('admin') && activeAdmins(db, ctx.orgId, user.id) === 0) {
+    return 'Il doit rester au moins un administrateur actif.';
+  }
+  transaction(db, () => {
+    run(
+      db,
+      `UPDATE users SET active = 0, deleted_at = ?, employee_id = NULL, login = login || '#supprime-' || id WHERE id = ? AND org_id = ?`,
+      new Date().toISOString(),
+      user.id,
+      ctx.orgId,
+    );
+    run(db, `DELETE FROM sessions WHERE user_id = ?`, user.id);
+    logAudit(db, ctx, { action: 'suppression', entityType: 'user', entityId: user.id, summary: `Membre supprimé : ${user.name} (${user.login}).` });
   });
   return null;
 }

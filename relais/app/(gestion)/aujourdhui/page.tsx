@@ -7,6 +7,7 @@ import { getDb } from '@/lib/db';
 import { dashboard } from '@/lib/data/dashboard';
 import { formatDate, formatLongDate, formatTime, parisDate } from '@/lib/domain/dates';
 import { formatKm } from '@/lib/domain/inspection';
+import { formatRange } from '@/lib/domain/shifts';
 import { ABSENCE_TYPES, labelOf } from '@/lib/domain/labels';
 import { canAccess } from '@/lib/domain/roles';
 import styles from './page.module.css';
@@ -42,7 +43,12 @@ export default async function TodayPage() {
 
       <section className={styles.kpis} aria-label="Indicateurs du jour">
         <Kpi label="Tournées couvertes" value={`${d.routes.covered} / ${d.routes.total}`} alert={d.routes.covered < d.routes.total} />
-        <Kpi label="Chauffeurs présents" value={d.people.present} note={`${d.people.absent} absent${d.people.absent > 1 ? 's' : ''}, ${d.people.late} en retard`} alert={d.people.absent > 0} />
+        <Kpi
+          label="Salariés planifiés"
+          value={d.people.planned}
+          note={`${d.people.onShift} en service, ${d.people.done} terminé${d.people.done > 1 ? 's' : ''}, ${d.people.absent} absent${d.people.absent > 1 ? 's' : ''}, ${d.people.late} en retard`}
+          alert={d.people.absent > 0}
+        />
         <Kpi label="Véhicules en tournée" value={d.vehicles.en_tournee} note={`${d.vehicles.disponible} disponible${d.vehicles.disponible > 1 ? 's' : ''}`} />
         <Kpi label="Véhicules bloqués ou immobilisés" value={d.vehicles.bloque + d.vehicles.immobilise} alert={d.vehicles.bloque > 0} />
         <Kpi label="Amendes à désigner" value={d.fines.length} alert={d.fines.some((f) => f.urgency === 'critique' || f.urgency === 'depasse')} />
@@ -62,19 +68,25 @@ export default async function TodayPage() {
               <Item
                 key={`r${r.id}`}
                 tone="yellow"
-                href={`/planning/remplacement?jour=${today}&tournee=${r.id}`}
-                title={`Tournée ${r.code} à couvrir`}
-                detail={`${r.employee_name ?? 'Sans chauffeur'} : ${r.issues.join(', ')}.`}
+                href={`/planning/remplacement?creneau=${r.id}`}
+                title={`${r.route_name ? `Tournée ${r.route_name}` : 'Créneau'} ${formatRange(r.start_time, r.end_time)} à couvrir`}
+                detail={`${r.employee_name ?? 'Sans salarié'} : ${r.issues.join(', ')}.`}
                 cta="Remplacer"
               />
             ))}
-            {d.board.routes
+            {d.board.shifts
               .filter((r) => !d.board.toReplace.includes(r) && r.issues.length > 0)
               .map((r) => (
-                <Item key={`v${r.id}`} tone="yellow" href={`/planning?jour=${today}`} title={`Tournée ${r.code}`} detail={r.issues.join(', ')} />
+                <Item
+                  key={`v${r.id}`}
+                  tone={r.blocking ? 'red' : 'yellow'}
+                  href={`/planning?jour=${today}`}
+                  title={`${r.employee_name ?? 'Sans salarié'} · ${r.route_name ? `tournée ${r.route_name}` : formatRange(r.start_time, r.end_time)}`}
+                  detail={r.issues.join(', ')}
+                />
               ))}
-            {d.blockedInspections.length === 0 && d.board.routes.every((r) => r.issues.length === 0) && (
-              <p className="empty">Rien à signaler : toutes les tournées ont un chauffeur et un véhicule.</p>
+            {d.blockedInspections.length === 0 && d.board.shifts.every((r) => r.issues.length === 0) && (
+              <p className="empty">Rien à signaler : chaque créneau du jour a un salarié disponible et un véhicule en règle.</p>
             )}
           </div>
         </section>
@@ -88,9 +100,9 @@ export default async function TodayPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Chauffeur</th>
+                  <th>Salarié</th>
                   <th>Statut</th>
-                  <th>Tournée</th>
+                  <th>Horaires et tournées</th>
                   <th>Véhicule</th>
                 </tr>
               </thead>
@@ -104,19 +116,22 @@ export default async function TodayPage() {
                     </td>
                     <td>
                       {p.absence_type ? (
-                        <span className={`badge ${p.absence_type === 'retard' ? 'badge-yellow' : 'badge-red'}`}>{labelOf(ABSENCE_TYPES, p.absence_type)}</span>
-                      ) : p.on_duty_plate ? (
-                        <span className="badge badge-black">En tournée</span>
-                      ) : p.plan_status === 'travail' ? (
-                        <span className="badge">Prévu</span>
-                      ) : p.plan_status === 'repos' ? (
-                        <span className="badge badge-soft">Repos</span>
+                        <span className="badge badge-red">{labelOf(ABSENCE_TYPES, p.absence_type)}</span>
+                      ) : p.unavailable ? (
+                        <span className="badge badge-red">Indisponible</span>
+                      ) : p.shifts.some((s) => s.status === 'en_cours') ? (
+                        <span className="badge badge-black">En service</span>
+                      ) : p.shifts.length > 0 && p.shifts.every((s) => s.status === 'realise') ? (
+                        <span className="badge">Journée terminée</span>
+                      ) : p.shifts.length > 0 ? (
+                        <span className="badge badge-yellow">Prévu</span>
                       ) : (
                         <span className="badge badge-soft">Non planifié</span>
                       )}
+                      {p.late && <span className="badge badge-yellow">Retard</span>}
                     </td>
-                    <td>{p.route_code ?? ''}</td>
-                    <td className="mono">{p.on_duty_plate ?? p.plate ?? ''}</td>
+                    <td className="small">{p.shifts.map((s) => `${formatRange(s.start_time, s.end_time)}${s.route_name ? ` ${s.route_name}` : ''}`).join(' ; ')}</td>
+                    <td className="mono">{p.on_duty_plate ?? p.shifts.find((s) => s.plate)?.plate ?? ''}</td>
                   </tr>
                 ))}
               </tbody>

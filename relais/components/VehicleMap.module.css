@@ -1,0 +1,72 @@
+.svg {
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+
+.body {
+  fill: var(--grey-100, #f1f1f1);
+  stroke: var(--ink-900, #0b0b0c);
+  stroke-width: 2;
+}
+
+.caption {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  fill: var(--grey-500, #777);
+}
+
+.zone {
+  fill: #ffffff;
+  stroke: var(--ink-900, #0b0b0c);
+  stroke-width: 1.5;
+  transition: fill 0.12s;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover,
+.clickable:focus-visible {
+  fill: #fff3a3;
+  outline: none;
+}
+
+.on {
+  fill: var(--red, #d62828);
+}
+
+.clickable.on:hover {
+  fill: #b71f1f;
+}
+
+.count {
+  fill: #ffffff;
+  stroke: none;
+  font-size: 13px;
+  font-weight: 900;
+  pointer-events: none;
+}
+
+.picker {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.list {
+  display: grid;
+  gap: 4px;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 520px) {
+  .picker {
+    grid-template-columns: 1fr;
+  }
+}

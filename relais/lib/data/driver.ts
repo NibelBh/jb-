@@ -1,29 +1,15 @@
 import 'server-only';
 import { type Db, all, get } from '../db';
 import { expiryStatus, needsAttention } from '../domain/documents';
-import { openAssignmentFor, pendingInspectionFor } from './operations';
-
-export type DriverPlan = {
-  route_code: string | null;
-  start_time: string | null;
-  client: string | null;
-  vehicle_id: number | null;
-  plate: string | null;
-  vehicle_status: string | null;
-  status: string;
-};
+import { type VehicleAdmin, vehicleCompliance } from '../domain/vehicles';
+import { addDays } from '../domain/dates';
+import { currentShiftFor, openAssignmentFor, pendingInspectionFor, vehicleReservedFor } from './operations';
+import { listShifts } from './planning';
 
 /** Tout ce dont l'écran d'accueil du chauffeur a besoin, en une fois. */
 export function driverHome(db: Db, orgId: number, employeeId: number, today: string) {
-  const plan = get<DriverPlan>(
-    db,
-    `SELECT r.code AS route_code, r.start_time, r.client, p.vehicle_id, v.plate, v.status AS vehicle_status, p.status
-       FROM plans p LEFT JOIN routes r ON r.id = p.route_id LEFT JOIN vehicles v ON v.id = p.vehicle_id
-      WHERE p.org_id = ? AND p.employee_id = ? AND p.day = ?`,
-    orgId,
-    employeeId,
-    today,
-  );
+  const shifts = listShifts(db, orgId, { from: today, to: today, employeeId });
+  const upcoming = listShifts(db, orgId, { from: addDays(today, 1), to: addDays(today, 7), employeeId });
   const absence = get<{ type: string; end_on: string }>(
     db,
     `SELECT type, end_on FROM absences WHERE org_id = ? AND employee_id = ? AND start_on <= ? AND end_on >= ? AND type != 'retard'`,
@@ -52,7 +38,9 @@ export function driverHome(db: Db, orgId: number, employeeId: number, today: str
     (licence && !docs.length && needsAttention(expiryStatus(licence.licence_expires_on, today)) ? 1 : 0);
 
   return {
-    plan,
+    shifts,
+    upcoming,
+    current: currentShiftFor(db, orgId, employeeId, today),
     absence,
     open: openAssignmentFor(db, orgId, employeeId),
     pending: pendingInspectionFor(db, orgId, employeeId),
@@ -62,12 +50,14 @@ export function driverHome(db: Db, orgId: number, employeeId: number, today: str
   };
 }
 
-export function availableVehicles(db: Db, orgId: number) {
-  return all<{ id: number; plate: string; brand: string | null; model: string | null; current_km: number }>(
+/** Véhicules que le chauffeur peut prendre : disponibles, assurés et contrôle technique à jour. */
+export function availableVehicles(db: Db, orgId: number, employeeId: number, today: string) {
+  return all<{ id: number; plate: string; brand: string | null; model: string | null; current_km: number } & VehicleAdmin>(
     db,
-    `SELECT id, plate, brand, model, current_km FROM vehicles WHERE org_id = ? AND status = 'disponible' ORDER BY plate`,
+    `SELECT id, plate, brand, model, current_km, insurance_end_on, ct_last_on, ct_expires_on, first_registration_on
+       FROM vehicles WHERE org_id = ? AND status = 'disponible' ORDER BY plate`,
     orgId,
-  );
+  ).filter((v) => vehicleCompliance(v, today).blocking.length === 0 && !vehicleReservedFor(db, orgId, v.id, employeeId, today));
 }
 
 /** Véhicules sur lesquels un chauffeur peut signaler un problème : le sien d'abord, puis tous ceux en service. */

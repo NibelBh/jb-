@@ -59,6 +59,44 @@ export function VehicleFields({ vehicle }: { vehicle?: VehicleRow }) {
           <input id="owner" name="owner" className="input" defaultValue={vehicle?.owner ?? ''} />
         </div>
       </div>
+
+      <fieldset className="form-grid" style={{ border: '1px solid var(--grey-200)', borderRadius: 8, padding: 14 }}>
+        <legend className="small" style={{ fontWeight: 800, padding: '0 6px' }}>
+          Assurance
+        </legend>
+        <div className="field">
+          <label htmlFor="insurer">Assureur</label>
+          <input id="insurer" name="insurer" className="input" defaultValue={vehicle?.insurer ?? ''} placeholder="Ex. AXA Flotte" />
+        </div>
+        <div className="field">
+          <label htmlFor="insurance_policy">N° de contrat</label>
+          <input id="insurance_policy" name="insurance_policy" className="input mono" defaultValue={vehicle?.insurance_policy ?? ''} />
+        </div>
+        <div className="field">
+          <label htmlFor="insurance_start_on">Date de début</label>
+          <input id="insurance_start_on" name="insurance_start_on" type="date" className="input" defaultValue={vehicle?.insurance_start_on ?? ''} />
+        </div>
+        <div className="field">
+          <label htmlFor="insurance_end_on">Date d’échéance</label>
+          <input id="insurance_end_on" name="insurance_end_on" type="date" className="input" defaultValue={vehicle?.insurance_end_on ?? ''} />
+          <span className="hint">Assurance expirée : le véhicule ne peut plus être planifié ni pris.</span>
+        </div>
+      </fieldset>
+
+      <fieldset className="form-grid" style={{ border: '1px solid var(--grey-200)', borderRadius: 8, padding: 14 }}>
+        <legend className="small" style={{ fontWeight: 800, padding: '0 6px' }}>
+          Contrôle technique
+        </legend>
+        <div className="field">
+          <label htmlFor="ct_last_on">Date du dernier contrôle</label>
+          <input id="ct_last_on" name="ct_last_on" type="date" className="input" defaultValue={vehicle?.ct_last_on ?? ''} />
+        </div>
+        <div className="field">
+          <label htmlFor="ct_expires_on">Date d’échéance</label>
+          <input id="ct_expires_on" name="ct_expires_on" type="date" className="input" defaultValue={vehicle?.ct_expires_on ?? ''} />
+          <span className="hint">Vide : calculée depuis la première immatriculation (4 ans) ou le dernier contrôle (2 ans).</span>
+        </div>
+      </fieldset>
       <div className="field">
         <label htmlFor="notes">Notes</label>
         <textarea id="notes" name="notes" className="input" defaultValue={vehicle?.notes ?? ''} />

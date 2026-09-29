@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { ActionForm } from '@/components/ActionForm';
 import { PageHeader } from '@/components/PageHeader';
+import { ZonePicker } from '@/components/ZonePicker';
 import { requireModule } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { listEmployees } from '@/lib/data/employees';
@@ -78,6 +79,10 @@ export default async function NewDamagePage(props: PageProps<'/dommages/nouveau'
               <label htmlFor="time">Heure</label>
               <input id="time" name="time" type="time" className="input" defaultValue="08:00" required />
             </div>
+          </div>
+          <div className="field">
+            <span className="label">Localisation sur le véhicule</span>
+            <ZonePicker />
           </div>
           <div className="field">
             <label htmlFor="location">Lieu</label>

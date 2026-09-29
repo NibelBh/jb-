@@ -3,64 +3,157 @@ import { ActionForm } from '@/components/ActionForm';
 import { PageHeader } from '@/components/PageHeader';
 import { requireModule } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { listEmployees, listUsers } from '@/lib/data/employees';
+import { type UserRow, fullName, listEmployees, listUsers } from '@/lib/data/employees';
 import { formatDateTime } from '@/lib/domain/dates';
-import { ROLES, parseRoles } from '@/lib/domain/roles';
-import { createManagerAction, updateAccessAction } from './actions';
+import { ACCESS_LEVELS, ROLES, accessLevel, parseRoles, roleLabel } from '@/lib/domain/roles';
+import { createMemberAction, deleteMemberAction, toggleMemberAction, updateMemberAction } from './actions';
 
-export const metadata: Metadata = { title: 'Paramètres' };
+export const metadata: Metadata = { title: 'Membres et accès' };
+
+const SCOPES = ROLES.filter((r) => r.level === 'responsable');
+
+function MemberFields({ user, employees, prefix }: { user?: UserRow; employees: { id: number; name: string }[]; prefix: string }) {
+  const roles = user ? parseRoles(user.roles) : [];
+  const level = user ? accessLevel(roles) : 'responsable';
+  return (
+    <>
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor={`${prefix}-name`}>Nom affiché</label>
+          <input id={`${prefix}-name`} name="name" className="input" defaultValue={user?.name} required />
+        </div>
+        <div className="field">
+          <label htmlFor={`${prefix}-login`}>Identifiant de connexion</label>
+          <input id={`${prefix}-login`} name="login" className="input" defaultValue={user?.login} required autoComplete="off" />
+          <span className="hint">E-mail pour un responsable, prénom pour un salarié.</span>
+        </div>
+        <div className="field">
+          <label htmlFor={`${prefix}-employee`}>Fiche salarié liée</label>
+          <select id={`${prefix}-employee`} name="employeeId" className="input" defaultValue={user?.employee_id ?? ''}>
+            <option value="">Aucune</option>
+            {employees.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+          </select>
+          <span className="hint">Obligatoire pour un salarié (application chauffeur).</span>
+        </div>
+        <div className="field">
+          <label htmlFor={`${prefix}-password`}>{user ? 'Nouveau mot de passe ou code (facultatif)' : 'Mot de passe provisoire ou code'}</label>
+          <input id={`${prefix}-password`} name="password" type="password" className="input" autoComplete="new-password" required={!user} />
+          <span className="hint">8 caractères minimum ; code à 6 chiffres pour un salarié.</span>
+        </div>
+      </div>
+      <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
+        <legend className="label">Niveau d’accès</legend>
+        <div className="stack-sm">
+          {ACCESS_LEVELS.map((l) => (
+            <label key={l.value} className="checkbox">
+              <input type="radio" name="level" value={l.value} defaultChecked={level === l.value} required /> <strong>{l.label}</strong>{' '}
+              <span className="small muted">{l.hint}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
+        <legend className="small muted">Périmètre d’un responsable (facultatif : sans choix, accès responsable complet hors paie)</legend>
+        <div className="btn-row">
+          {SCOPES.map((r) => (
+            <label key={r.value} className="checkbox small">
+              <input type="checkbox" name="scopes" value={r.value} defaultChecked={roles.includes(r.value)} /> {r.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+    </>
+  );
+}
 
 export default async function SettingsPage() {
   const ctx = await requireModule('parametres');
   const db = getDb();
   const users = listUsers(db, ctx.orgId);
-  const employees = listEmployees(db, ctx.orgId);
+  const employees = listEmployees(db, ctx.orgId).map((e) => ({ id: e.id, name: fullName(e) }));
 
   return (
     <>
-      <PageHeader title="Utilisateurs et accès" subtitle="Chaque personne a son propre accès. Un utilisateur peut cumuler plusieurs rôles. Les chauffeurs se connectent avec un identifiant et un code à 6 chiffres." />
+      <PageHeader
+        title="Membres et accès"
+        subtitle="Trois niveaux : Administrateur, Responsable / manager, Salarié. Un membre désactivé ne peut plus se connecter mais reste dans l’historique ; un membre supprimé disparaît de la liste, son nom reste dans le journal."
+      />
 
       <section className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head">
+          <h2 className="section-title">Membres</h2>
+          <span className="small muted">
+            {users.length} membre{users.length > 1 ? 's' : ''}, dont {users.filter((u) => !u.active).length} désactivé{users.filter((u) => !u.active).length > 1 ? 's' : ''}
+          </span>
+        </div>
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
                 <th>Nom</th>
                 <th>Identifiant</th>
+                <th>Niveau</th>
+                <th>Fiche salarié</th>
                 <th>Dernière connexion</th>
-                <th>Rôles et accès</th>
+                <th />
               </tr>
             </thead>
             <tbody>
               {users.map((u) => {
-                const current = parseRoles(u.roles);
+                const roles = parseRoles(u.roles);
+                const level = ACCESS_LEVELS.find((l) => l.value === accessLevel(roles));
+                const self = u.id === ctx.userId;
                 return (
-                  <tr key={u.id} style={{ verticalAlign: 'top' }}>
+                  <tr key={u.id} style={{ verticalAlign: 'top', opacity: u.active ? 1 : 0.65 }}>
                     <td>
                       <strong>{u.name}</strong>
-                      {!u.active && <div className="badge badge-soft">Désactivé</div>}
+                      {self && <span className="small muted"> (vous)</span>}
+                      <div>{u.active ? <span className="badge">Actif</span> : <span className="badge badge-soft">Désactivé</span>}</div>
                     </td>
                     <td className="mono small">{u.login}</td>
+                    <td>
+                      <strong>{level?.label}</strong>
+                      {level?.value === 'responsable' && <div className="small muted">{roles.map(roleLabel).join(', ')}</div>}
+                    </td>
+                    <td className="small">{employees.find((e) => e.id === u.employee_id)?.name ?? '·'}</td>
                     <td className="small">{u.last_login_at ? formatDateTime(u.last_login_at) : 'Jamais'}</td>
                     <td>
+                      <div className="btn-row" style={{ alignItems: 'flex-start' }}>
+                        {!self && (
+                          <ActionForm
+                            action={toggleMemberAction}
+                            submitLabel={u.active ? 'Désactiver' : 'Réactiver'}
+                            submitClassName="btn btn-ghost btn-sm"
+                            className="btn-row"
+                            confirmMessage={u.active ? `Désactiver ${u.name} ? Il ne pourra plus se connecter.` : undefined}
+                          >
+                            <input type="hidden" name="userId" value={u.id} />
+                          </ActionForm>
+                        )}
+                        {!self && (
+                          <ActionForm
+                            action={deleteMemberAction}
+                            submitLabel="Supprimer"
+                            submitClassName="btn btn-danger btn-sm"
+                            className="btn-row"
+                            confirmMessage={`Supprimer définitivement le membre ${u.name} ? Son nom restera dans l’historique.`}
+                          >
+                            <input type="hidden" name="userId" value={u.id} />
+                          </ActionForm>
+                        )}
+                      </div>
                       <details className="disclosure">
-                        <summary>{current.map((r) => ROLES.find((x) => x.value === r)?.label).join(', ')}</summary>
-                        <ActionForm action={updateAccessAction} submitLabel="Enregistrer" submitClassName="btn btn-sm">
+                        <summary>Modifier</summary>
+                        <ActionForm action={updateMemberAction} submitLabel="Enregistrer" submitClassName="btn btn-sm">
                           <input type="hidden" name="userId" value={u.id} />
-                          <div className="btn-row">
-                            {ROLES.map((r) => (
-                              <label key={r.value} className="checkbox small">
-                                <input type="checkbox" name="roles" value={r.value} defaultChecked={current.includes(r.value)} /> {r.label}
-                              </label>
-                            ))}
-                          </div>
+                          <MemberFields user={u} employees={employees} prefix={`u${u.id}`} />
                           <label className="checkbox small">
                             <input type="checkbox" name="active" defaultChecked={u.active === 1} /> Accès actif
                           </label>
-                          <div className="field">
-                            <label htmlFor={`pw-${u.id}`}>Nouveau mot de passe ou code (facultatif)</label>
-                            <input id={`pw-${u.id}`} name="password" type="password" className="input" autoComplete="new-password" />
-                          </div>
                         </ActionForm>
                       </details>
                     </td>
@@ -74,43 +167,12 @@ export default async function SettingsPage() {
 
       <section className="card">
         <div className="card-head">
-          <h2 className="section-title">Ajouter un responsable</h2>
-          <span className="small muted">Pour un chauffeur, créez l’accès depuis sa fiche salarié.</span>
+          <h2 className="section-title">Ajouter un membre</h2>
+          <span className="small muted">Un salarié peut aussi recevoir son accès depuis sa fiche.</span>
         </div>
         <div className="card-body">
-          <ActionForm action={createManagerAction} submitLabel="Créer l’utilisateur" resetOnSuccess>
-            <div className="form-grid">
-              <div className="field">
-                <label htmlFor="name">Nom</label>
-                <input id="name" name="name" className="input" required />
-              </div>
-              <div className="field">
-                <label htmlFor="login">Identifiant (e-mail)</label>
-                <input id="login" name="login" type="email" className="input" required />
-              </div>
-              <div className="field">
-                <label htmlFor="password">Mot de passe provisoire</label>
-                <input id="password" name="password" type="password" className="input" minLength={8} autoComplete="new-password" required />
-              </div>
-              <div className="field">
-                <label htmlFor="employeeId">Fiche salarié liée (facultatif)</label>
-                <select id="employeeId" name="employeeId" className="input">
-                  <option value="">Aucune</option>
-                  {employees.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.first_name} {e.last_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="btn-row">
-              {ROLES.filter((r) => r.value !== 'chauffeur').map((r) => (
-                <label key={r.value} className="checkbox">
-                  <input type="checkbox" name="roles" value={r.value} /> {r.label}
-                </label>
-              ))}
-            </div>
+          <ActionForm action={createMemberAction} submitLabel="Ajouter le membre" resetOnSuccess>
+            <MemberFields employees={employees} prefix="new" />
           </ActionForm>
         </div>
       </section>

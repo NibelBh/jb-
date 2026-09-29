@@ -339,6 +339,101 @@ const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   );
   `,
+  // 3 : planification par créneaux horaires (plusieurs tournées possibles par jour),
+  // présence réelle, assurance et contrôle technique des véhicules, fiche salarié complète,
+  // localisation des dégâts, suppression logique des comptes.
+  `
+  CREATE TABLE shifts (
+    id INTEGER PRIMARY KEY,
+    org_id INTEGER NOT NULL REFERENCES organizations(id),
+    day TEXT NOT NULL,
+    employee_id INTEGER REFERENCES employees(id),
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    route_name TEXT,
+    vehicle_id INTEGER REFERENCES vehicles(id),
+    status TEXT NOT NULL DEFAULT 'prevu' CHECK (status IN ('prevu', 'en_cours', 'realise')),
+    actual_start TEXT,
+    actual_end TEXT,
+    closed_by TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  );
+  CREATE INDEX shifts_day ON shifts(org_id, day);
+  CREATE INDEX shifts_employee ON shifts(org_id, employee_id, day);
+
+  -- Reprise des anciennes données : une ligne de planning = un créneau.
+  INSERT INTO shifts (org_id, day, employee_id, start_time, end_time, route_name, vehicle_id)
+    SELECT p.org_id, p.day, p.employee_id, COALESCE(r.start_time, '08:00'), '17:00', r.code, p.vehicle_id
+      FROM plans p LEFT JOIN routes r ON r.id = p.route_id WHERE p.status = 'travail';
+  INSERT INTO shifts (org_id, day, employee_id, start_time, end_time, route_name)
+    SELECT r.org_id, r.day, NULL, COALESCE(r.start_time, '08:00'), '17:00', r.code FROM routes r
+     WHERE NOT EXISTS (SELECT 1 FROM plans p WHERE p.route_id = r.id AND p.status = 'travail');
+  DROP TABLE plans;
+  DROP TABLE routes;
+
+  ALTER TABLE assignments ADD COLUMN shift_id INTEGER REFERENCES shifts(id);
+  ALTER TABLE inspections ADD COLUMN shift_id INTEGER REFERENCES shifts(id);
+
+  -- Présence réelle de l'ancienne version : un véhicule pris ce jour-là.
+  -- (Jour de Paris approché : l'heure d'été s'applique d'avril à octobre.)
+  CREATE TEMP TABLE legacy_days AS
+    SELECT a.id AS assignment_id, a.org_id, a.employee_id, a.vehicle_id, a.started_at, a.ended_at,
+           date(a.started_at, CASE WHEN CAST(substr(a.started_at, 6, 2) AS INTEGER) BETWEEN 4 AND 10 THEN '+2 hours' ELSE '+1 hour' END) AS day,
+           strftime('%H:%M', a.started_at, CASE WHEN CAST(substr(a.started_at, 6, 2) AS INTEGER) BETWEEN 4 AND 10 THEN '+2 hours' ELSE '+1 hour' END) AS start_time,
+           strftime('%H:%M', COALESCE(a.ended_at, a.started_at), CASE WHEN CAST(substr(a.started_at, 6, 2) AS INTEGER) BETWEEN 4 AND 10 THEN '+2 hours' ELSE '+1 hour' END) AS end_time
+      FROM assignments a;
+  -- Jour planifié et véhicule pris : le créneau est réalisé (ou en cours si le véhicule n'est pas rendu).
+  UPDATE shifts SET
+    status = CASE WHEN EXISTS (SELECT 1 FROM legacy_days l WHERE l.org_id = shifts.org_id AND l.employee_id = shifts.employee_id AND l.day = shifts.day AND l.ended_at IS NULL)
+                  THEN 'en_cours' ELSE 'realise' END,
+    actual_start = (SELECT MIN(l.started_at) FROM legacy_days l WHERE l.org_id = shifts.org_id AND l.employee_id = shifts.employee_id AND l.day = shifts.day),
+    actual_end = (SELECT MAX(l.ended_at) FROM legacy_days l WHERE l.org_id = shifts.org_id AND l.employee_id = shifts.employee_id AND l.day = shifts.day
+                    AND NOT EXISTS (SELECT 1 FROM legacy_days o WHERE o.org_id = l.org_id AND o.employee_id = l.employee_id AND o.day = l.day AND o.ended_at IS NULL)),
+    closed_by = 'Reprise des données'
+  WHERE employee_id IS NOT NULL
+    AND EXISTS (SELECT 1 FROM legacy_days l WHERE l.org_id = shifts.org_id AND l.employee_id = shifts.employee_id AND l.day = shifts.day);
+  -- Véhicule pris un jour non planifié : un créneau réalisé, sans tournée connue.
+  INSERT INTO shifts (org_id, day, employee_id, start_time, end_time, route_name, vehicle_id, status, actual_start, actual_end, closed_by, notes)
+    SELECT l.org_id, l.day, l.employee_id, MIN(l.start_time), CASE WHEN MAX(l.end_time) > MIN(l.start_time) THEN MAX(l.end_time) ELSE '23:59' END,
+           NULL, MIN(l.vehicle_id), CASE WHEN COUNT(*) > COUNT(l.ended_at) THEN 'en_cours' ELSE 'realise' END,
+           MIN(l.started_at), CASE WHEN COUNT(*) > COUNT(l.ended_at) THEN NULL ELSE MAX(l.ended_at) END, 'Reprise des données', 'Repris de l’historique des véhicules'
+      FROM legacy_days l
+     WHERE NOT EXISTS (SELECT 1 FROM shifts s WHERE s.org_id = l.org_id AND s.employee_id = l.employee_id AND s.day = l.day)
+     GROUP BY l.org_id, l.employee_id, l.day;
+  UPDATE assignments SET shift_id = (
+    SELECT s.id FROM shifts s JOIN legacy_days l ON l.assignment_id = assignments.id
+     WHERE s.org_id = l.org_id AND s.employee_id = l.employee_id AND s.day = l.day ORDER BY s.start_time LIMIT 1);
+  DROP TABLE legacy_days;
+
+  ALTER TABLE vehicles ADD COLUMN insurer TEXT;
+  ALTER TABLE vehicles ADD COLUMN insurance_policy TEXT;
+  ALTER TABLE vehicles ADD COLUMN insurance_start_on TEXT;
+  ALTER TABLE vehicles ADD COLUMN insurance_end_on TEXT;
+  ALTER TABLE vehicles ADD COLUMN ct_last_on TEXT;
+  ALTER TABLE vehicles ADD COLUMN ct_expires_on TEXT;
+  UPDATE vehicles SET
+    insurance_start_on = (SELECT d.issued_on FROM documents d WHERE d.org_id = vehicles.org_id AND d.entity_type = 'vehicle' AND d.entity_id = vehicles.id AND d.type = 'assurance' ORDER BY d.expires_on DESC LIMIT 1),
+    insurance_end_on = (SELECT d.expires_on FROM documents d WHERE d.org_id = vehicles.org_id AND d.entity_type = 'vehicle' AND d.entity_id = vehicles.id AND d.type = 'assurance' ORDER BY d.expires_on DESC LIMIT 1),
+    insurance_policy = (SELECT d.reference FROM documents d WHERE d.org_id = vehicles.org_id AND d.entity_type = 'vehicle' AND d.entity_id = vehicles.id AND d.type = 'assurance' ORDER BY d.expires_on DESC LIMIT 1),
+    ct_last_on = (SELECT d.issued_on FROM documents d WHERE d.org_id = vehicles.org_id AND d.entity_type = 'vehicle' AND d.entity_id = vehicles.id AND d.type = 'controle_technique' ORDER BY d.issued_on DESC LIMIT 1),
+    ct_expires_on = (SELECT d.expires_on FROM documents d WHERE d.org_id = vehicles.org_id AND d.entity_type = 'vehicle' AND d.entity_id = vehicles.id AND d.type = 'controle_technique' ORDER BY d.issued_on DESC LIMIT 1);
+
+  ALTER TABLE employees ADD COLUMN birth_date TEXT;
+  ALTER TABLE employees ADD COLUMN birth_place TEXT;
+  ALTER TABLE employees ADD COLUMN nationality TEXT;
+  ALTER TABLE employees ADD COLUMN address TEXT;
+  ALTER TABLE employees ADD COLUMN postal_code TEXT;
+  ALTER TABLE employees ADD COLUMN city TEXT;
+  ALTER TABLE employees ADD COLUMN emergency_name TEXT;
+  ALTER TABLE employees ADD COLUMN emergency_phone TEXT;
+  ALTER TABLE employees ADD COLUMN licence_issued_on TEXT;
+
+  ALTER TABLE damages ADD COLUMN zones TEXT NOT NULL DEFAULT '';
+
+  ALTER TABLE users ADD COLUMN deleted_at TEXT;
+  `,
 ];
 
 export function openDatabase(location: string): Db {

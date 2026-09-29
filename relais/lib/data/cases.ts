@@ -33,10 +33,14 @@ export type DamageRow = {
   final_cost_cents: number | null;
   created_at: string;
   closed_at: string | null;
+  /** Zones touchées, séparées par des virgules (voir lib/domain/zones.ts). */
+  zones: string;
+  /** Personne qui a enregistré le constat (compte utilisateur). */
+  reporter_name: string | null;
 };
 
-const DAMAGE_SELECT = `SELECT d.*, v.plate, e.first_name || ' ' || e.last_name AS employee_name
-  FROM damages d JOIN vehicles v ON v.id = d.vehicle_id LEFT JOIN employees e ON e.id = d.employee_id`;
+const DAMAGE_SELECT = `SELECT d.*, v.plate, e.first_name || ' ' || e.last_name AS employee_name, u.name AS reporter_name
+  FROM damages d JOIN vehicles v ON v.id = d.vehicle_id LEFT JOIN employees e ON e.id = d.employee_id LEFT JOIN users u ON u.id = d.reported_by`;
 
 export function listDamages(db: Db, orgId: number, filter: { open?: boolean; vehicleId?: number; employeeId?: number } = {}): DamageRow[] {
   const where = ['d.org_id = ?'];

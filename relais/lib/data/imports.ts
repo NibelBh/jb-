@@ -3,6 +3,7 @@ import type { Ctx } from '../auth';
 import { type Db, all, dryRun, run, transaction } from '../db';
 import { normalizeHeader, parseCsv } from '../domain/csv';
 import { parisDate } from '../domain/dates';
+import { normalizeTime } from '../domain/shifts';
 import { DOCUMENT_TYPES, type DocumentEntity } from '../domain/documents';
 import {
   type ImportReport,
@@ -18,7 +19,7 @@ import { ABSENCE_TYPES, CONTRACT_TYPES, EMPLOYEE_STATUSES, ENERGIES, POSITIONS, 
 import type { Action } from '../domain/roles';
 import { logAudit } from './audit';
 import { type EmployeeRow, listEmployees } from './employees';
-import { addAbsence } from './planning';
+import { addAbsence, createShifts, listShifts, updateShift } from './planning';
 import { type EmployeeInput, type VehicleInput, addDocument, createEmployee, createVehicle, normalizePlate, updateEmployee, updateVehicle } from './records';
 import { type VehicleRow, listVehicles } from './vehicles';
 
@@ -29,15 +30,15 @@ export const IMPORT_KINDS = {
     label: 'Véhicules',
     action: 'vehicule.modifier',
     help: 'Crée les véhicules absents et complète ceux qui existent déjà (reconnus par l’immatriculation). Une cellule vide ne modifie rien.',
-    columns: ['immatriculation*', 'vin', 'marque', 'modele', 'annee', 'type', 'energie', 'premiere_immatriculation', 'kilometrage', 'proprietaire', 'notes'],
-    example: ['AB-123-CD', 'VF1MA000000000000', 'Renault', 'Master', '2023', 'Fourgon', 'Diesel', '15/03/2023', '45200', 'Loueur longue durée', ''],
+    columns: ['immatriculation*', 'vin', 'marque', 'modele', 'annee', 'type', 'energie', 'premiere_immatriculation', 'kilometrage', 'proprietaire', 'assureur', 'contrat_assurance', 'debut_assurance', 'fin_assurance', 'dernier_controle_technique', 'echeance_controle_technique', 'notes'],
+    example: ['AB-123-CD', 'VF1MA000000000000', 'Renault', 'Master', '2023', 'Fourgon', 'Diesel', '15/03/2023', '45200', 'Loueur longue durée', 'AXA Flotte', 'POL-2026-001', '01/01/2026', '31/12/2026', '', '', ''],
   },
   personnel: {
     label: 'Personnel',
     action: 'personnel.modifier',
     help: 'Crée ou complète les fiches salariés, reconnues par le matricule de paie, sinon par le nom et le prénom.',
-    columns: ['matricule', 'nom*', 'prenom*', 'telephone', 'email', 'poste', 'contrat', 'statut', 'date_embauche', 'date_sortie', 'numero_permis', 'categories_permis', 'fin_validite_permis', 'notes'],
-    example: ['M012', 'DUPONT', 'Jean', '06 12 34 56 78', 'jean.dupont@exemple.fr', 'Chauffeur-livreur', 'CDI', 'Actif', '01/09/2026', '', '123456789012', 'B', '15/03/2034', ''],
+    columns: ['matricule', 'nom*', 'prenom*', 'date_naissance', 'telephone', 'email', 'adresse', 'code_postal', 'ville', 'contact_urgence', 'telephone_urgence', 'poste', 'contrat', 'statut', 'date_embauche', 'date_sortie', 'numero_permis', 'categories_permis', 'date_obtention_permis', 'fin_validite_permis', 'notes'],
+    example: ['M012', 'DUPONT', 'Jean', '12/05/1990', '06 12 34 56 78', 'jean.dupont@exemple.fr', '4 rue des Lilas', '93200', 'Saint-Denis', 'Marie Dupont', '06 98 76 54 32', 'Chauffeur-livreur', 'CDI', 'Actif', '01/09/2026', '', '123456789012', 'B', '20/06/2010', '15/03/2034', ''],
   },
   absences: {
     label: 'Absences et congés',
@@ -45,6 +46,13 @@ export const IMPORT_KINDS = {
     help: 'Ajoute des absences (congés, arrêts, formations…). Une absence identique déjà enregistrée est ignorée. Aucun motif médical.',
     columns: ['matricule', 'nom', 'prenom', 'type*', 'du*', 'au', 'commentaire'],
     example: ['M012', 'DUPONT', 'Jean', 'Congé', '12/10/2026', '16/10/2026', ''],
+  },
+  planning: {
+    label: 'Planning (horaires et tournées)',
+    action: 'planning.modifier',
+    help: 'Crée les planifications : un salarié, un jour, une heure de début et de fin, une tournée et un véhicule facultatifs. Une tournée déjà planifiée le même jour est mise à jour (changement de salarié, d’horaires ou de véhicule). Mêmes contrôles que la saisie : disponibilité, chevauchements, assurance et contrôle technique.',
+    columns: ['date*', 'matricule', 'nom', 'prenom', 'debut*', 'fin*', 'tournee', 'vehicule', 'commentaire'],
+    example: ['05/10/2026', 'M012', 'DUPONT', 'Jean', '07:30', '16:00', 'A01', 'AB-123-CD', ''],
   },
   documents: {
     label: 'Documents et échéances',
@@ -123,6 +131,7 @@ export function runImport(db: Db, ctx: Actor, kind: ImportKind, text: string, co
     if (kind === 'vehicules') importVehicles(db, ctx, header, data, report);
     else if (kind === 'personnel') importEmployees(db, ctx, header, data, report);
     else if (kind === 'absences') importAbsences(db, ctx, header, data, report);
+    else if (kind === 'planning') importPlanning(db, ctx, header, data, report);
     else importDocuments(db, ctx, header, data, report);
     logAudit(db, ctx, {
       action: 'import',
@@ -154,6 +163,12 @@ function importVehicles(db: Db, ctx: Actor, header: string[], data: string[][], 
     firstReg: ['premiere_immatriculation', 'date_premiere_immatriculation', 'date_de_premiere_immatriculation', 'mise_en_circulation', 'date_mise_en_circulation'],
     km: ['kilometrage', 'km', 'compteur', 'kilometrage_actuel'],
     owner: ['proprietaire', 'loueur', 'proprietaire_ou_loueur'],
+    insurer: ['assureur', 'compagnie_assurance', 'assurance'],
+    policy: ['contrat_assurance', 'police', 'numero_police', 'n_contrat', 'numero_contrat'],
+    insuranceStart: ['debut_assurance', 'date_debut_assurance', 'assurance_du'],
+    insuranceEnd: ['fin_assurance', 'echeance_assurance', 'date_fin_assurance', 'expiration_assurance', 'assurance_au'],
+    ctLast: ['dernier_controle_technique', 'dernier_ct', 'date_controle_technique', 'date_ct'],
+    ctDue: ['echeance_controle_technique', 'echeance_ct', 'prochain_ct', 'prochain_controle_technique'],
     notes: ['notes', 'commentaire', 'remarques'],
   });
   if (col.plate < 0) {
@@ -174,8 +189,10 @@ function importVehicles(db: Db, ctx: Actor, header: string[], data: string[][], 
     const year = parseIntegerCell(cell(row, col.year));
     const km = parseIntegerCell(cell(row, col.km));
     const firstReg = parseDateCell(cell(row, col.firstReg));
-    for (const p of [year, km, firstReg]) if (!p.ok) return lineError(report, line, p.error);
+    const adminDates = [col.insuranceStart, col.insuranceEnd, col.ctLast, col.ctDue].map((c) => parseDateCell(cell(row, c)));
+    for (const p of [year, km, firstReg, ...adminDates]) if (!p.ok) return lineError(report, line, p.error);
     if (!year.ok || !km.ok || !firstReg.ok) return;
+    const [insuranceStart, insuranceEnd, ctLast, ctDue] = adminDates.map((d) => (d.ok ? d.value : null));
     if (year.value !== null && (year.value < 1990 || year.value > 2100)) return lineError(report, line, `année ${year.value} invalide.`);
     if (km.value !== null && km.value < 0) return lineError(report, line, 'kilométrage négatif.');
 
@@ -198,6 +215,12 @@ function importVehicles(db: Db, ctx: Actor, header: string[], data: string[][], 
       energy: energy ?? current?.energy ?? 'diesel',
       first_registration_on: firstReg.value ?? current?.first_registration_on ?? null,
       initial_km: current ? current.initial_km : (km.value ?? 0),
+      insurer: pick(cell(row, col.insurer), current?.insurer ?? null),
+      insurance_policy: pick(cell(row, col.policy), current?.insurance_policy ?? null),
+      insurance_start_on: insuranceStart ?? current?.insurance_start_on ?? null,
+      insurance_end_on: insuranceEnd ?? current?.insurance_end_on ?? null,
+      ct_last_on: ctLast ?? current?.ct_last_on ?? null,
+      ct_expires_on: ctDue ?? current?.ct_expires_on ?? null,
       owner: pick(cell(row, col.owner), current?.owner ?? null),
       notes: pick(cell(row, col.notes), current?.notes ?? null),
     };
@@ -265,6 +288,15 @@ function importEmployees(db: Db, ctx: Actor, header: string[], data: string[][],
     payrollId: ['matricule', 'matricule_paie', 'id_paie', 'numero_salarie'],
     lastName: ['nom', 'nom_de_famille'],
     firstName: ['prenom'],
+    birthDate: ['date_naissance', 'date_de_naissance', 'ne_le', 'naissance'],
+    birthPlace: ['lieu_naissance', 'lieu_de_naissance'],
+    nationality: ['nationalite'],
+    address: ['adresse', 'adresse_postale', 'rue'],
+    postalCode: ['code_postal', 'cp'],
+    city: ['ville', 'commune'],
+    emergencyName: ['contact_urgence', 'personne_a_prevenir', 'contact_d_urgence'],
+    emergencyPhone: ['telephone_urgence', 'tel_urgence', 'telephone_d_urgence'],
+    licenceIssued: ['date_obtention_permis', 'obtention_permis', 'permis_obtenu_le', 'date_permis'],
     phone: ['telephone', 'tel', 'portable', 'mobile'],
     email: ['email', 'e_mail', 'mail', 'courriel'],
     position: ['poste', 'fonction', 'emploi'],
@@ -295,9 +327,9 @@ function importEmployees(db: Db, ctx: Actor, header: string[], data: string[][],
       seenPayroll.add(payrollId.toUpperCase());
     }
 
-    const dates = [parseDateCell(cell(row, col.hiredOn)), parseDateCell(cell(row, col.leftOn)), parseDateCell(cell(row, col.licenceExpires))];
+    const dates = [col.hiredOn, col.leftOn, col.licenceExpires, col.birthDate, col.licenceIssued].map((c) => parseDateCell(cell(row, c)));
     for (const d of dates) if (!d.ok) return lineError(report, line, d.error);
-    const [hiredOn, leftOn, licenceExpires] = dates.map((d) => (d.ok ? d.value : null));
+    const [hiredOn, leftOn, licenceExpires, birthDate, licenceIssued] = dates.map((d) => (d.ok ? d.value : null));
 
     const positionRaw = cell(row, col.position);
     const position = positionRaw ? matchOption(POSITIONS, positionRaw, POSITION_SYNONYMS) : null;
@@ -324,6 +356,15 @@ function importEmployees(db: Db, ctx: Actor, header: string[], data: string[][],
       payroll_id: payrollId || current?.payroll_id || null,
       first_name: current ? current.first_name : firstName,
       last_name: current ? current.last_name : lastName,
+      birth_date: birthDate ?? current?.birth_date ?? null,
+      birth_place: pick(cell(row, col.birthPlace), current?.birth_place ?? null),
+      nationality: pick(cell(row, col.nationality), current?.nationality ?? null),
+      address: pick(cell(row, col.address), current?.address ?? null),
+      postal_code: pick(cell(row, col.postalCode), current?.postal_code ?? null),
+      city: pick(cell(row, col.city), current?.city ?? null),
+      emergency_name: pick(cell(row, col.emergencyName), current?.emergency_name ?? null),
+      emergency_phone: pick(cell(row, col.emergencyPhone), current?.emergency_phone ?? null),
+      licence_issued_on: licenceIssued ?? current?.licence_issued_on ?? null,
       email: pick(cell(row, col.email), current?.email ?? null),
       phone: pick(cell(row, col.phone), current?.phone ?? null),
       position: position ?? current?.position ?? 'chauffeur',
@@ -396,9 +437,75 @@ function importAbsences(db: Db, ctx: Actor, header: string[], data: string[][], 
       report.skipped++;
       return;
     }
-    const error = addAbsence(db, ctx, { employeeId: who.employee.id, type, startOn: start.value, endOn, note: cell(row, col.note) || null }, today);
+    const { error } = addAbsence(db, ctx, { employeeId: who.employee.id, type, startOn: start.value, endOn, note: cell(row, col.note) || null }, today);
     if (error) return lineError(report, line, error);
     report.created++;
+  });
+}
+
+// ---------- Planning ----------
+
+function importPlanning(db: Db, ctx: Actor, header: string[], data: string[][], report: ImportReport) {
+  const col = mapColumns(header, {
+    day: ['date', 'jour'],
+    payrollId: ['matricule', 'matricule_paie'],
+    lastName: ['nom'],
+    firstName: ['prenom'],
+    driver: ['salarie', 'chauffeur', 'livreur', 'driver'],
+    start: ['debut', 'heure_debut', 'depart', 'heure_depart', 'prise_de_poste'],
+    end: ['fin', 'heure_fin', 'retour', 'fin_de_poste'],
+    route: ['tournee', 'code_tournee', 'route', 'code'],
+    plate: ['vehicule', 'immatriculation', 'plaque', 'van'],
+    notes: ['commentaire', 'notes', 'remarques'],
+  });
+  if (col.day < 0 || col.start < 0 || col.end < 0) {
+    report.errors.push('Colonnes « date », « debut » et « fin » obligatoires.');
+    return;
+  }
+  const index = employeeIndex(db, ctx.orgId);
+  const vehicles = listVehicles(db, ctx.orgId);
+  const plateKey = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  data.forEach((row, i) => {
+    const line = i + 2;
+    const day = parseDateCell(cell(row, col.day));
+    if (!day.ok) return lineError(report, line, day.error);
+    if (!day.value) return lineError(report, line, 'date vide.');
+    const start = normalizeTime(cell(row, col.start));
+    const end = normalizeTime(cell(row, col.end));
+    if (!start || !end) return lineError(report, line, 'heure de début ou de fin invalide (ex. 07:30).');
+
+    let employeeId: number | null = null;
+    const payrollId = cell(row, col.payrollId);
+    let lastName = cell(row, col.lastName);
+    let firstName = cell(row, col.firstName);
+    const full = cell(row, col.driver);
+    if (!lastName && full) {
+      const parts = full.split(/\s+/);
+      firstName = parts.shift() ?? '';
+      lastName = parts.join(' ');
+    }
+    if (payrollId || lastName) {
+      const who = findEmployee(index, payrollId, lastName, firstName);
+      if (!who.employee) return lineError(report, line, who.error ?? 'salarié introuvable.');
+      employeeId = who.employee.id;
+    }
+    const plateText = cell(row, col.plate);
+    const vehicle = plateText ? vehicles.find((v) => plateKey(v.plate) === plateKey(plateText)) : undefined;
+    if (plateText && !vehicle) return lineError(report, line, `véhicule ${plateText} introuvable.`);
+    const routeName = cell(row, col.route).toUpperCase() || null;
+    const fields = { employeeId, startTime: start, endTime: end, routeName, vehicleId: vehicle?.id ?? null, notes: cell(row, col.notes) || null };
+
+    const existing = routeName ? listShifts(db, ctx.orgId, { from: day.value, to: day.value }).find((s) => s.route_name?.toLowerCase() === routeName.toLowerCase()) : undefined;
+    if (existing) {
+      const error = updateShift(db, ctx, existing.id, { ...fields, day: day.value });
+      if (error) return lineError(report, line, error);
+      report.updated++;
+    } else {
+      const result = createShifts(db, ctx, fields, [day.value]);
+      if (result.error) return lineError(report, line, result.error);
+      report.created++;
+    }
   });
 }
 

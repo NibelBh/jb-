@@ -1,5 +1,7 @@
 import 'server-only';
 import { type Db, all, get } from '../db';
+import { ABSENCE_TYPES, labelOf } from '../domain/labels';
+import { type Availability, availability } from '../domain/shifts';
 
 export type EmployeeRow = {
   id: number;
@@ -7,8 +9,16 @@ export type EmployeeRow = {
   payroll_id: string | null;
   first_name: string;
   last_name: string;
+  birth_date: string | null;
+  birth_place: string | null;
+  nationality: string | null;
+  address: string | null;
+  postal_code: string | null;
+  city: string | null;
   email: string | null;
   phone: string | null;
+  emergency_name: string | null;
+  emergency_phone: string | null;
   position: string;
   contract_type: string | null;
   status: string;
@@ -16,6 +26,7 @@ export type EmployeeRow = {
   left_on: string | null;
   licence_number: string | null;
   licence_categories: string;
+  licence_issued_on: string | null;
   licence_expires_on: string | null;
   licence_checked_on: string | null;
   notes: string | null;
@@ -71,12 +82,47 @@ export function listAbsences(db: Db, orgId: number, filter: { from: string; to: 
   );
 }
 
-export type UserRow = { id: number; name: string; login: string; roles: string; active: number; employee_id: number | null; last_login_at: string | null };
+/** Disponibilité d'un salarié un jour donné (absences, arrivée, sortie, suspension). */
+export function employeeAvailability(db: Db, orgId: number, employee: EmployeeRow, day: string): Availability {
+  const absences = listAbsences(db, orgId, { from: day, to: day, employeeId: employee.id }).map((a) => ({ ...a, label: labelOf(ABSENCE_TYPES, a.type) }));
+  return availability(employee, absences, day);
+}
 
+/** Situation du jour affichée sur la fiche et dans la liste du personnel. */
+export function currentSituation(db: Db, orgId: number, employee: EmployeeRow, day: string): { label: string; tone: 'ok' | 'warn' | 'off'; until?: string } {
+  if (employee.status === 'sorti') return { label: 'Sorti de l’entreprise', tone: 'off' };
+  if (employee.status === 'suspendu') return { label: 'Suspendu', tone: 'off' };
+  if (employee.hired_on && employee.hired_on > day) return { label: 'Arrivée prévue', tone: 'warn', until: employee.hired_on };
+  const absence = listAbsences(db, orgId, { from: day, to: day, employeeId: employee.id }).find((a) => a.type !== 'retard');
+  if (absence) return { label: labelOf(ABSENCE_TYPES, absence.type), tone: 'off', until: absence.end_on };
+  return { label: 'Disponible', tone: 'ok' };
+}
+
+export type UserRow = {
+  id: number;
+  name: string;
+  login: string;
+  roles: string;
+  active: number;
+  employee_id: number | null;
+  last_login_at: string | null;
+  deleted_at: string | null;
+};
+
+/** Membres de l'entreprise (comptes supprimés exclus : ils restent dans l'historique). */
 export function listUsers(db: Db, orgId: number): UserRow[] {
-  return all<UserRow>(db, `SELECT id, name, login, roles, active, employee_id, last_login_at FROM users WHERE org_id = ? ORDER BY name`, orgId);
+  return all<UserRow>(
+    db,
+    `SELECT id, name, login, roles, active, employee_id, last_login_at, deleted_at FROM users WHERE org_id = ? AND deleted_at IS NULL ORDER BY name`,
+    orgId,
+  );
 }
 
 export function userForEmployee(db: Db, orgId: number, employeeId: number): UserRow | undefined {
-  return get<UserRow>(db, `SELECT id, name, login, roles, active, employee_id, last_login_at FROM users WHERE org_id = ? AND employee_id = ?`, orgId, employeeId);
+  return get<UserRow>(
+    db,
+    `SELECT id, name, login, roles, active, employee_id, last_login_at, deleted_at FROM users WHERE org_id = ? AND employee_id = ? AND deleted_at IS NULL`,
+    orgId,
+    employeeId,
+  );
 }

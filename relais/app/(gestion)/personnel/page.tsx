@@ -5,9 +5,9 @@ import { ExportLink } from '@/components/ExportLink';
 import { PageHeader } from '@/components/PageHeader';
 import { requireModule } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { listEmployees } from '@/lib/data/employees';
+import { currentSituation, listEmployees } from '@/lib/data/employees';
 import { listVehicles } from '@/lib/data/vehicles';
-import { parisDate } from '@/lib/domain/dates';
+import { formatDate, parisDate } from '@/lib/domain/dates';
 import { expiryStatus } from '@/lib/domain/documents';
 import { DRIVING_POSITIONS, EMPLOYEE_STATUSES, POSITIONS, labelOf } from '@/lib/domain/labels';
 import { can } from '@/lib/domain/roles';
@@ -50,6 +50,7 @@ export default async function StaffPage(props: PageProps<'/personnel'>) {
               <th>Matricule</th>
               <th>Poste</th>
               <th>Statut</th>
+              <th>Situation du jour</th>
               <th>Permis</th>
               <th>Véhicule en cours</th>
               <th>Téléphone</th>
@@ -67,6 +68,17 @@ export default async function StaffPage(props: PageProps<'/personnel'>) {
                 <td>{labelOf(POSITIONS, e.position)}</td>
                 <td>
                   <span className={`badge ${e.status === 'sorti' ? 'badge-soft' : e.status === 'suspendu' ? 'badge-red' : ''}`}>{labelOf(EMPLOYEE_STATUSES, e.status)}</span>
+                </td>
+                <td>
+                  {(() => {
+                    const sit = currentSituation(db, ctx.orgId, e, today);
+                    return (
+                      <span className={`badge ${sit.tone === 'off' ? 'badge-red' : sit.tone === 'warn' ? 'badge-yellow' : 'badge-soft'}`}>
+                        {sit.label}
+                        {sit.until ? ` jusqu’au ${formatDate(sit.until)}` : ''}
+                      </span>
+                    );
+                  })()}
                 </td>
                 <td>{DRIVING_POSITIONS.includes(e.position) ? <ExpiryBadge status={expiryStatus(e.licence_expires_on, today)} /> : <span className="muted small">·</span>}</td>
                 <td className="mono">{onDuty.get(e.id) ?? ''}</td>

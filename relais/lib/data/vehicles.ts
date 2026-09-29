@@ -16,6 +16,12 @@ export type VehicleRow = {
   current_km: number;
   owner: string | null;
   notes: string | null;
+  insurer: string | null;
+  insurance_policy: string | null;
+  insurance_start_on: string | null;
+  insurance_end_on: string | null;
+  ct_last_on: string | null;
+  ct_expires_on: string | null;
 };
 
 export type VehicleListRow = VehicleRow & {
@@ -65,17 +71,6 @@ export function openImmobilization(db: Db, orgId: number, vehicleId: number): Im
     orgId,
     vehicleId,
   );
-}
-
-export function lastTechnicalInspection(db: Db, orgId: number, vehicleId: number): string | null {
-  const row = get<{ issued_on: string | null }>(
-    db,
-    `SELECT issued_on FROM documents WHERE org_id = ? AND entity_type = 'vehicle' AND entity_id = ? AND type = 'controle_technique'
-     ORDER BY issued_on DESC LIMIT 1`,
-    orgId,
-    vehicleId,
-  );
-  return row?.issued_on ?? null;
 }
 
 export type AssignmentHistoryRow = {

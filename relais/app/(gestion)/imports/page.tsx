@@ -9,7 +9,7 @@ import { importAction } from './actions';
 
 export const metadata: Metadata = { title: 'Imports CSV' };
 
-const ORDER: ImportKind[] = ['personnel', 'vehicules', 'documents', 'absences'];
+const ORDER: ImportKind[] = ['personnel', 'vehicules', 'planning', 'documents', 'absences'];
 
 export default async function ImportsPage() {
   const ctx = await requireModule('imports');
