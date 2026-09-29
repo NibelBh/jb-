@@ -12,8 +12,6 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Application Relais : projet séparé, avec sa propre configuration.
-    "relais/**",
   ]),
 ]);
 

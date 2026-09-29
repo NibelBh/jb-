@@ -1,0 +1,235 @@
+/*
+ * Application chauffeur : fond noir, gros boutons jaunes, lisible en plein soleil
+ * et utilisable avec des gants. Une action principale par écran.
+ */
+.shell {
+  min-height: 100dvh;
+  background: var(--black);
+  color: var(--white);
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--black);
+}
+
+.header a {
+  text-decoration: none;
+}
+
+.headRight {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.headLink {
+  background: none;
+  border: 0;
+  padding: 6px 0;
+  color: var(--grey-300);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.speed {
+  height: 6px;
+  background: var(--stripes);
+}
+
+.main {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 18px 16px 48px;
+  display: grid;
+  gap: 16px;
+}
+
+.hello {
+  display: grid;
+  gap: 2px;
+}
+
+.hello h1 {
+  font-size: 1.7rem;
+  color: var(--white);
+}
+
+.hello p {
+  color: var(--grey-300);
+}
+
+.hello p::first-letter {
+  text-transform: uppercase;
+}
+
+.panel {
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--ink-800);
+  border: 1px solid var(--ink-700);
+  display: grid;
+  gap: 8px;
+}
+
+.panelLabel {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--grey-400);
+  font-weight: 700;
+}
+
+.big {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 2rem;
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+
+.plate {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 2px solid var(--black);
+  border-radius: 4px;
+  background: var(--white);
+  color: var(--black);
+  font-weight: 800;
+  font-size: 1.3rem;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.primary {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 76px;
+  padding: 16px 20px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--yellow);
+  color: var(--black);
+  font: inherit;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 1.45rem;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.primary::after {
+  content: '';
+  width: 54px;
+  height: 22px;
+  flex: none;
+  background: linear-gradient(90deg, transparent 0 10%, var(--black) 10% 30%, transparent 30% 45%, var(--black) 45% 65%, transparent 65% 80%, var(--black) 80% 100%);
+  transform: skewX(-24deg);
+}
+
+.primary:active {
+  transform: translateY(1px);
+}
+
+.primary:disabled {
+  opacity: 0.6;
+}
+
+.secondary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 60px;
+  padding: 12px 18px;
+  border-radius: 10px;
+  border: 2px solid var(--white);
+  background: transparent;
+  color: var(--white);
+  font: inherit;
+  font-weight: 800;
+  font-size: 1.1rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.secondary:hover {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.danger {
+  border-color: var(--red);
+  background: var(--red);
+  color: var(--white);
+}
+
+.danger:hover {
+  color: var(--white);
+  border-color: var(--white);
+}
+
+.list {
+  display: grid;
+  gap: 10px;
+}
+
+.notice {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border-left: 6px solid var(--yellow);
+  background: var(--ink-800);
+}
+
+.noticeRed {
+  border-left-color: var(--red);
+}
+
+.muted {
+  color: var(--grey-300);
+  font-size: 0.9rem;
+}
+
+.pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 3px;
+  background: var(--yellow);
+  color: var(--black);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+/* Les formulaires de l'application chauffeur sont posés sur une carte blanche. */
+.sheet {
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--white);
+  color: var(--ink-900);
+}
+
+.sheet h2 {
+  margin-bottom: 10px;
+}
+
+.backLink {
+  color: var(--grey-300);
+  font-weight: 700;
+  text-decoration: none;
+}

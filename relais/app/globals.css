@@ -1,0 +1,583 @@
+/*
+ * Charte Relais : noir, jaune et blanc, comme la signalisation routière.
+ * Le jaune se pose toujours sur du noir ou porte du texte noir : jamais de texte jaune sur blanc.
+ * Le rouge n'est utilisé que pour ce qui bloque (document expiré, véhicule bloqué).
+ */
+:root {
+  --black: #0b0b0c;
+  --ink-900: #121214;
+  --ink-800: #1b1b1f;
+  --ink-700: #2a2a30;
+  --ink-600: #3d3d44;
+  --grey-500: #62626a;
+  --grey-400: #8d8d94;
+  --grey-300: #c8c8cc;
+  --grey-200: #e2e2e0;
+  --grey-100: #f2f2ef;
+  --white: #ffffff;
+
+  --yellow: #ffd400;
+  --yellow-strong: #f2c200;
+  --yellow-soft: #fff4b8;
+  --yellow-wash: #fffbe6;
+
+  --red: #c8231b;
+  --red-soft: #fde7e5;
+
+  --color-bg: var(--grey-100);
+  --color-surface: var(--white);
+  --color-border: var(--grey-200);
+  --color-text: var(--ink-900);
+  --color-muted: var(--grey-500);
+  --color-accent: var(--yellow);
+
+  --font-body: 'Inter', 'Segoe UI', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue Condensed', 'Segoe UI', system-ui, sans-serif;
+
+  --radius-sm: 4px;
+  --radius: 8px;
+  --shadow: 0 1px 2px rgb(11 11 12 / 0.06), 0 4px 16px -8px rgb(11 11 12 / 0.18);
+
+  /* Motif vitesse : bandes obliques jaune et noir. */
+  --stripes: repeating-linear-gradient(-45deg, var(--yellow) 0 12px, var(--black) 12px 24px);
+  --speed-lines: repeating-linear-gradient(90deg, transparent 0 18px, rgb(255 212 0 / 0.9) 18px 42px, transparent 42px 60px);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--yellow-strong);
+}
+
+a:hover {
+  text-decoration-color: var(--black);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+h1 {
+  font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem);
+}
+
+h2 {
+  font-size: 1.1rem;
+}
+
+h3 {
+  font-size: 0.95rem;
+}
+
+p {
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 3px solid var(--yellow);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--black);
+}
+
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -60px;
+  z-index: 100;
+  padding: 10px 14px;
+  background: var(--yellow);
+  color: var(--black);
+  font-weight: 700;
+}
+
+.skip-link:focus {
+  top: 8px;
+}
+
+.muted {
+  color: var(--color-muted);
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.mono {
+  font-variant-numeric: tabular-nums;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Titre de section avec la barre oblique jaune. */
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-title::before {
+  content: '';
+  width: 18px;
+  height: 14px;
+  background: var(--yellow);
+  transform: skewX(-20deg);
+  box-shadow: 6px 0 0 -2px var(--black);
+  flex: none;
+}
+
+/* ---------- Boutons ---------- */
+
+.btn {
+  --btn-bg: var(--black);
+  --btn-fg: var(--white);
+  --btn-border: var(--black);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 2px solid var(--btn-border);
+  border-radius: var(--radius-sm);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.08s ease, background-color 0.15s ease;
+}
+
+.btn:hover {
+  --btn-bg: var(--ink-700);
+  --btn-border: var(--ink-700);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-yellow {
+  --btn-bg: var(--yellow);
+  --btn-fg: var(--black);
+  --btn-border: var(--black);
+}
+
+.btn-yellow:hover {
+  --btn-bg: var(--yellow-strong);
+  --btn-border: var(--black);
+}
+
+.btn-ghost {
+  --btn-bg: transparent;
+  --btn-fg: var(--black);
+  --btn-border: var(--grey-300);
+}
+
+.btn-ghost:hover {
+  --btn-bg: var(--grey-100);
+  --btn-border: var(--black);
+}
+
+.btn-danger {
+  --btn-bg: var(--white);
+  --btn-fg: var(--red);
+  --btn-border: var(--red);
+}
+
+.btn-danger:hover {
+  --btn-bg: var(--red-soft);
+  --btn-border: var(--red);
+}
+
+.btn-sm {
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ---------- Cartes, badges ---------- */
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.card-body {
+  padding: 18px 20px;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.stack {
+  display: grid;
+  gap: 16px;
+}
+
+.stack-sm {
+  display: grid;
+  gap: 8px;
+}
+
+.grid-2 {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--grey-300);
+  background: var(--white);
+  color: var(--ink-800);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.badge-yellow {
+  background: var(--yellow);
+  border-color: var(--black);
+  color: var(--black);
+}
+
+.badge-black {
+  background: var(--black);
+  border-color: var(--black);
+  color: var(--yellow);
+}
+
+.badge-red {
+  background: var(--red);
+  border-color: var(--red);
+  color: var(--white);
+}
+
+.badge-soft {
+  background: var(--grey-100);
+  border-color: var(--grey-200);
+  color: var(--grey-500);
+}
+
+/* ---------- Tableaux ---------- */
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.table th {
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--grey-500);
+  font-weight: 700;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--black);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
+.table tbody tr:hover {
+  background: var(--yellow-wash);
+}
+
+.table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.row-link {
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.row-link:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--yellow-strong);
+}
+
+/* ---------- Formulaires ---------- */
+
+.form {
+  display: grid;
+  gap: 16px;
+}
+
+.form-grid {
+  display: grid;
+  gap: 14px 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field label,
+.field .label {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.field .hint {
+  font-size: 0.8rem;
+  color: var(--grey-500);
+}
+
+.input,
+select.input,
+textarea.input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--grey-300);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+  color: var(--ink-900);
+  font: inherit;
+}
+
+textarea.input {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.input:hover {
+  border-color: var(--grey-400);
+}
+
+.input:focus {
+  border-color: var(--black);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--yellow);
+}
+
+.checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.checkbox input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--black);
+  margin-top: 1px;
+}
+
+.alert {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--black);
+  background: var(--yellow-soft);
+  font-weight: 600;
+}
+
+.alert-error {
+  border-color: var(--red);
+  background: var(--red-soft);
+  color: #7a120d;
+}
+
+.alert-ok {
+  border-color: var(--black);
+  background: var(--white);
+}
+
+.alert-ok::before {
+  content: '';
+  width: 10px;
+  align-self: stretch;
+  background: var(--yellow);
+  transform: skewX(-15deg);
+  flex: none;
+}
+
+/* ---------- Divers ---------- */
+
+.empty {
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--grey-500);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: minmax(120px, 42%) 1fr;
+  gap: 8px 14px;
+  font-size: 0.92rem;
+}
+
+.kv dt {
+  color: var(--grey-500);
+}
+
+.kv dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.timeline li {
+  position: relative;
+  padding-left: 22px;
+}
+
+.timeline li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  background: var(--yellow);
+  border: 2px solid var(--black);
+  transform: skewX(-15deg);
+}
+
+.photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+.photos a {
+  display: block;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--grey-200);
+  background: var(--grey-100);
+}
+
+.photos img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.stripes {
+  height: 8px;
+  background: var(--stripes);
+}
+
+details.disclosure > summary {
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+details.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.disclosure > summary::before {
+  content: '+ ';
+}
+
+details.disclosure[open] > summary::before {
+  content: '− ';
+}
