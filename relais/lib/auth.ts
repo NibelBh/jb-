@@ -134,7 +134,8 @@ export async function login(loginId: string, password: string): Promise<LoginRes
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    // RELAIS_COOKIE_SECURE=0 : essai sur le PC, ouvert depuis un téléphone du même Wi-Fi en http.
+    secure: process.env.NODE_ENV === 'production' && process.env.RELAIS_COOKIE_SECURE !== '0',
     path: '/',
     expires,
   });

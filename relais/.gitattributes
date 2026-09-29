@@ -1,0 +1,3 @@
+# Les lanceurs gardent leurs fins de ligne : CRLF pour Windows, LF pour Mac.
+*.bat -text
+*.command text eol=lf
