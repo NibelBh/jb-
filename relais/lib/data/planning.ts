@@ -241,6 +241,83 @@ export function reassignShift(db: Db, ctx: Actor, shiftId: number, employeeId: n
   });
 }
 
+// ---------- Véhicule attribué ----------
+
+/**
+ * Attribue (ou retire) un véhicule à un salarié. Un véhicule n'est attribué qu'à une personne.
+ * Avec `applyToFuture`, les planifications à venir encore « prévues » passent sur ce véhicule,
+ * sauf celles où il est déjà pris sur les mêmes horaires (elles sont signalées).
+ */
+export function attributeVehicle(
+  db: Db,
+  ctx: Actor,
+  employeeId: number,
+  vehicleId: number | null,
+  applyToFuture: boolean,
+  today = parisDate(),
+): { error?: string; updated: number; skipped: string[] } {
+  const none = { updated: 0, skipped: [] as string[] };
+  const employee = getEmployee(db, ctx.orgId, employeeId);
+  if (!employee) return { ...none, error: 'Salarié introuvable.' };
+  const vehicle = vehicleId ? getVehicle(db, ctx.orgId, vehicleId) : undefined;
+  if (vehicleId) {
+    if (!vehicle) return { ...none, error: 'Véhicule introuvable.' };
+    if (vehicle.status === 'sorti') return { ...none, error: `Le véhicule ${vehicle.plate} est sorti de la flotte.` };
+    if (employee.status === 'sorti') return { ...none, error: `${fullName(employee)} ne fait plus partie de l’entreprise.` };
+    if (!DRIVING_POSITIONS.includes(employee.position)) return { ...none, error: `${fullName(employee)} n’occupe pas un poste de conduite.` };
+    const holder = get<{ id: number; first_name: string; last_name: string }>(
+      db,
+      `SELECT id, first_name, last_name FROM employees WHERE org_id = ? AND vehicle_id = ? AND id != ?`,
+      ctx.orgId,
+      vehicleId,
+      employee.id,
+    );
+    if (holder) return { ...none, error: `${vehicle.plate} est déjà attribué à ${fullName(holder)}. Retirez-le d’abord de sa fiche.` };
+  }
+  const before = employee.vehicle_id ? (getVehicle(db, ctx.orgId, employee.vehicle_id)?.plate ?? null) : null;
+  const skipped: string[] = [];
+  let updated = 0;
+  transaction(db, () => {
+    if (employee.vehicle_id !== vehicleId) {
+      run(db, `UPDATE employees SET vehicle_id = ? WHERE id = ? AND org_id = ?`, vehicleId, employee.id, ctx.orgId);
+      logAudit(db, ctx, {
+        action: 'modification',
+        entityType: 'employee',
+        entityId: employee.id,
+        summary: vehicle ? `${vehicle.plate} est attribué à ${fullName(employee)}.` : `${fullName(employee)} n’a plus de véhicule attribué.`,
+        changes: [{ field: 'vehicle_id', label: 'Véhicule attribué', before, after: vehicle?.plate ?? null }],
+      });
+    }
+    if (!applyToFuture || !vehicle) return;
+    const future = listShifts(db, ctx.orgId, { from: today, to: addDays(today, 366), employeeId: employee.id }).filter(
+      (s) => s.status === 'prevu' && (s.route_name || s.vehicle_id) && s.vehicle_id !== vehicle.id,
+    );
+    for (const s of future) {
+      const problem = shiftProblem(
+        db,
+        ctx.orgId,
+        { day: s.day, employeeId: employee.id, startTime: s.start_time, endTime: s.end_time, routeName: s.route_name, vehicleId: vehicle.id, notes: s.notes },
+        s.id,
+      );
+      if (problem) {
+        skipped.push(`${formatDate(s.day)} : ${problem}`);
+        continue;
+      }
+      run(db, `UPDATE shifts SET vehicle_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`, vehicle.id, s.id);
+      updated++;
+    }
+    if (updated) {
+      logAudit(db, ctx, {
+        action: 'planning',
+        entityType: 'employee',
+        entityId: employee.id,
+        summary: `${updated} planification(s) à venir de ${fullName(employee)} passent sur ${vehicle.plate}.`,
+      });
+    }
+  });
+  return { updated, skipped };
+}
+
 // ---------- Présence ----------
 
 /**
@@ -580,6 +657,46 @@ export function addAbsence(
   });
   return { freed: freed.length };
 }
+
+/**
+ * Modification d'une absence (type, dates, commentaire), avec les mêmes contrôles qu'à la création.
+ * Si la nouvelle période couvre des créneaux prévus, ils sont libérés ; ceux libérés auparavant restent à pourvoir.
+ */
+export function updateAbsence(
+  db: Db,
+  ctx: Actor,
+  absenceId: number,
+  input: { type: string; startOn: string; endOn: string; note: string | null },
+  today = parisDate(),
+): { error?: string; freed?: number } {
+  const absence = get<{ id: number; employee_id: number; type: string; start_on: string; end_on: string; note: string | null }>(
+    db,
+    `SELECT id, employee_id, type, start_on, end_on, note FROM absences WHERE id = ? AND org_id = ?`,
+    absenceId,
+    ctx.orgId,
+  );
+  if (!absence) return { error: 'Absence introuvable.' };
+  if (absence.type === input.type && absence.start_on === input.startOn && absence.end_on === input.endOn && (absence.note ?? null) === input.note) return {};
+  let result: { error?: string; freed?: number } = {};
+  try {
+    transaction(db, () => {
+      run(db, `DELETE FROM absences WHERE id = ? AND org_id = ?`, absence.id, ctx.orgId);
+      result = addAbsence(db, ctx, { employeeId: absence.employee_id, ...input }, today);
+      if (result.error) throw new AbsenceRollback();
+      logAudit(db, ctx, {
+        action: 'modification',
+        entityType: 'employee',
+        entityId: absence.employee_id,
+        summary: `Absence corrigée : ${labelOf(ABSENCE_TYPES, absence.type).toLowerCase()} du ${formatDate(absence.start_on)} au ${formatDate(absence.end_on)} devient ${labelOf(ABSENCE_TYPES, input.type).toLowerCase()} du ${formatDate(input.startOn)} au ${formatDate(input.endOn)}.`,
+      });
+    });
+  } catch (error) {
+    if (!(error instanceof AbsenceRollback)) throw error;
+  }
+  return result;
+}
+
+class AbsenceRollback extends Error {}
 
 export function deleteAbsence(db: Db, ctx: Actor, absenceId: number): void {
   const absence = get<{ id: number; employee_id: number; type: string; start_on: string; end_on: string }>(

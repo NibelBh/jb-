@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { AbsenceActions } from '@/components/AbsenceActions';
 import { ActionForm } from '@/components/ActionForm';
+import { FilterTabs } from '@/components/FilterTabs';
 import { PageHeader } from '@/components/PageHeader';
 import { requireModule } from '@/lib/auth';
 import { type Db, all, getDb } from '@/lib/db';
@@ -16,7 +18,6 @@ import {
   addAbsenceAction,
   confirmPresenceAction,
   createShiftAction,
-  deleteAbsenceAction,
   deleteShiftAction,
   markAbsentAction,
   updateShiftAction,
@@ -26,10 +27,12 @@ import { type EmployeeOption, ShiftFields, type VehicleOption } from './ShiftFie
 
 export const metadata: Metadata = { title: 'Planning' };
 
+const capitalize = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
 function options(db: Db, orgId: number, day: string) {
   const employees: EmployeeOption[] = listEmployees(db, orgId).map((e) => {
     const a = employeeAvailability(db, orgId, e, day);
-    return { id: e.id, name: fullName(e), unavailable: a.available ? null : a.reason.replace(/^est /, '').replace(/^n’est /, 'n’est '), driver: DRIVING_POSITIONS.includes(e.position) };
+    return { id: e.id, name: fullName(e), unavailable: a.available ? null : a.reason.replace(/^est /, ''), driver: DRIVING_POSITIONS.includes(e.position), vehicleId: e.vehicle_id };
   });
   employees.sort((a, b) => Number(b.driver) - Number(a.driver) || a.name.localeCompare(b.name, 'fr'));
   const vehicles: VehicleOption[] = listVehicles(db, orgId).map((v) => {
@@ -177,12 +180,20 @@ export default async function PlanningPage(props: PageProps<'/planning'>) {
   const editing = Number.isInteger(editId) ? getShift(db, ctx.orgId, editId) : undefined;
   const editOpts = editing && editing.day !== day ? options(db, ctx.orgId, editing.day) : opts;
   const creating = params.nouveau === '1' || board.shifts.length === 0;
+  const FILTERS = [
+    { value: '', label: 'Toutes', test: () => true },
+    { value: 'tournees', label: 'Tournées', test: (s: (typeof board.shifts)[number]) => !!s.route_name },
+    { value: 'a_couvrir', label: 'À régler', test: (s: (typeof board.shifts)[number]) => s.blocking || board.toReplace.includes(s) },
+    { value: 'a_confirmer', label: 'Présence à confirmer', test: (s: (typeof board.shifts)[number]) => board.toConfirm.includes(s) && s.status === 'prevu' && day < today },
+  ];
+  const filter = FILTERS.find((f) => f.value && f.value === params.filtre) ?? FILTERS[0];
+  const shown = board.shifts.filter(filter.test);
 
   return (
     <>
       <PageHeader
         title="Planning"
-        subtitle={`${formatLongDate(day)} · ${board.shifts.length} planification${board.shifts.length > 1 ? 's' : ''}, ${board.unassigned} sans salarié`}
+        subtitle={`${capitalize(formatLongDate(day))} · ${board.shifts.length} planification${board.shifts.length > 1 ? 's' : ''}${board.unassigned ? `, dont ${board.unassigned} sans salarié` : ''}`}
         actions={nav}
       />
 
@@ -240,12 +251,43 @@ export default async function PlanningPage(props: PageProps<'/planning'>) {
       <section className="card" style={{ marginBottom: 16 }}>
         <div className="card-head">
           <h2 className="section-title">Planifications du jour</h2>
-          <span className="small muted">
-            Présence : « En cours » dès la prise du véhicule, « Réalisé » après l’état de fin de journée ou la confirmation d’un responsable.
-          </span>
+          <span className="small muted">« En cours » dès que le chauffeur prend son véhicule, « Réalisé » après l’état de fin de journée.</span>
         </div>
+        {board.shifts.length > 0 && (
+          <div style={{ padding: '6px 20px 0' }}>
+            <FilterTabs
+              label="Filtrer les planifications"
+              items={FILTERS.map((f) => ({
+                href: `/planning?jour=${day}${f.value ? `&filtre=${f.value}` : ''}`,
+                label: f.label,
+                count: board.shifts.filter(f.test).length,
+                active: f === filter,
+              }))}
+            />
+          </div>
+        )}
         {board.shifts.length === 0 ? (
-          <p className="empty">Aucune planification ce jour. Utilisez « Créer une nouvelle planification » ou importez un fichier depuis Imports CSV.</p>
+          <div className="empty-state">
+            <strong>Personne n’est planifié ce jour-là</strong>
+            <p>Créez les planifications une par une, répétez celles d’un salarié sur la semaine, ou importez le planning depuis un fichier.</p>
+            {editable && (
+              <div className="btn-row">
+                <Link className="btn btn-yellow" href={`/planning?jour=${day}&nouveau=1#nouvelle`}>
+                  Créer une planification
+                </Link>
+                <Link className="btn btn-ghost" href="/imports">
+                  Importer un planning
+                </Link>
+              </div>
+            )}
+          </div>
+        ) : shown.length === 0 ? (
+          <div className="empty-state">
+            <strong>Rien dans cette catégorie</strong>
+            <p>
+              <Link href={`/planning?jour=${day}`}>Voir toutes les planifications du jour</Link>
+            </p>
+          </div>
         ) : (
           <div className="table-wrap">
             <table className="table">
@@ -256,27 +298,37 @@ export default async function PlanningPage(props: PageProps<'/planning'>) {
                   <th>Tournée</th>
                   <th>Véhicule</th>
                   <th>Présence</th>
-                  <th>Alertes</th>
-                  <th />
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {board.shifts.map((s) => (
+                {shown.map((s) => (
                   <tr key={s.id} className={s.blocking ? styles.blockRow : s.issues.length ? styles.issueRow : ''}>
-                    <td className="mono nowrap">
-                      {formatRange(s.start_time, s.end_time)}
-                      {s.notes && <div className="small muted">{s.notes}</div>}
-                    </td>
-                    <td className="nowrap">
+                    <td className="mono nowrap">{formatRange(s.start_time, s.end_time)}</td>
+                    <td>
                       {s.employee_id ? (
-                        <Link className="row-link" href={`/personnel/${s.employee_id}`}>
+                        <Link className="row-link nowrap" href={`/personnel/${s.employee_id}`}>
                           {s.employee_name}
                         </Link>
                       ) : (
                         <span className="badge badge-red">À pourvoir</span>
                       )}
+                      {s.issues.filter((i) => i !== 'Aucun salarié').length > 0 && (
+                        <div className={styles.issues} style={{ marginTop: 4 }}>
+                          {s.issues
+                            .filter((i) => i !== 'Aucun salarié')
+                            .map((i) => (
+                              <span key={i} className={`badge ${s.blocking && i !== 'Aucun véhicule' && i !== 'Retard signalé' && i !== 'Présence non confirmée' ? 'badge-red' : 'badge-yellow'}`}>
+                                {i}
+                              </span>
+                            ))}
+                        </div>
+                      )}
                     </td>
-                    <td>{s.route_name ? <strong>{s.route_name}</strong> : <span className="muted small">Sans tournée</span>}</td>
+                    <td>
+                      {s.route_name ? <strong>{s.route_name}</strong> : <span className="muted small">Sans tournée</span>}
+                      {s.notes && <div className="small muted">{s.notes}</div>}
+                    </td>
                     <td className="mono nowrap">{s.plate ?? ''}</td>
                     <td className="nowrap">
                       <span className={`badge ${s.status === 'realise' ? '' : s.status === 'en_cours' ? 'badge-black' : 'badge-soft'}`}>{labelOf(SHIFT_STATUSES, s.status)}</span>
@@ -286,15 +338,6 @@ export default async function PlanningPage(props: PageProps<'/planning'>) {
                           {s.closed_by ? ` (${s.closed_by})` : ''}
                         </div>
                       )}
-                    </td>
-                    <td>
-                      <div className={styles.issues}>
-                        {s.issues.map((i) => (
-                          <span key={i} className={`badge ${s.blocking && i !== 'Aucun véhicule' && i !== 'Retard signalé' && i !== 'Présence non confirmée' ? 'badge-red' : 'badge-yellow'}`}>
-                            {i}
-                          </span>
-                        ))}
-                      </div>
                     </td>
                     <td>
                       <div className={styles.actions}>
@@ -370,7 +413,7 @@ export default async function PlanningPage(props: PageProps<'/planning'>) {
       </section>
 
       <div className="grid-2">
-        <section className="card">
+        <section className="card" id="disponibilites">
           <div className="card-head">
             <h2 className="section-title">Disponibilités du jour</h2>
           </div>
@@ -426,11 +469,7 @@ export default async function PlanningPage(props: PageProps<'/planning'>) {
                     {a.note ? `. ${a.note}` : ''}
                   </div>
                 </div>
-                {canAbsence && (
-                  <ActionForm action={deleteAbsenceAction} submitLabel="Retirer" submitClassName="btn btn-ghost btn-sm" className={styles.inline} confirmMessage="Retirer cette absence ?">
-                    <input type="hidden" name="absenceId" value={a.id} />
-                  </ActionForm>
-                )}
+                {canAbsence && <AbsenceActions absence={a} />}
               </div>
             ))}
             {canAbsence && (

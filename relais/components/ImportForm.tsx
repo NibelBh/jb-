@@ -66,16 +66,29 @@ export function ImportForm({
         </p>
       )}
       {state?.details && state.details.length > 0 && (
-        <ul className="small" style={{ margin: 0, paddingLeft: 18, maxHeight: 220, overflowY: 'auto' }}>
-          {state.details.map((d, i) => (
-            <li key={`${i}-${d}`}>{d}</li>
-          ))}
-        </ul>
+        <div className="report">
+          <strong>Lignes refusées ({state.details.length})</strong>
+          <ul>
+            {state.details.map((d, i) => (
+              <li key={`${i}-${d}`}>{d}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {state?.warnings && state.warnings.length > 0 && (
+        <div className="report report-soft">
+          <strong>Remarques</strong>
+          <ul>
+            {state.warnings.map((d, i) => (
+              <li key={`${i}-${d}`}>{d}</li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <div className="btn-row">
         <button type="submit" name="mode" value="verifier" className="btn btn-ghost" disabled={pending}>
-          {pending ? 'Traitement…' : 'Vérifier le fichier'}
+          {pending ? 'Lecture du fichier…' : 'Vérifier le fichier'}
         </button>
         <button type="submit" name="mode" value="importer" className={state?.verified ? 'btn btn-yellow' : 'btn'} disabled={pending}>
           Importer

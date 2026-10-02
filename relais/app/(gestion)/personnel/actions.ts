@@ -3,12 +3,13 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireAction } from '@/lib/auth';
-import { getDb } from '@/lib/db';
+import { getDb, transaction } from '@/lib/db';
+import { attributeVehicle } from '@/lib/data/planning';
 import { getEmployee } from '@/lib/data/employees';
 import { type EmployeeInput, createEmployee, createUser, recordLicenceCheck, updateEmployee } from '@/lib/data/records';
 import { passwordProblem } from '@/lib/domain/password';
 import { CONTRACT_TYPES, EMPLOYEE_STATUSES, POSITIONS } from '@/lib/domain/labels';
-import { type FormState, date, id, oneOf, optDate, optText, text, toFormState } from '@/lib/forms';
+import { FieldError, type FormState, checked, date, id, oneOf, optDate, optId, optText, text, toFormState } from '@/lib/forms';
 
 function employeeInput(formData: FormData): EmployeeInput {
   const categories = String(formData.getAll('licence_categories').join(','))
@@ -59,15 +60,28 @@ export async function createEmployeeAction(_: FormState, formData: FormData): Pr
 
 export async function updateEmployeeAction(_: FormState, formData: FormData): Promise<FormState> {
   const employeeId = Number(formData.get('employeeId'));
+  let skipped = 0;
+  let moved = 0;
   try {
     const ctx = await requireAction('personnel.modifier');
-    const error = updateEmployee(getDb(), ctx, employeeId, employeeInput(formData));
-    if (error) return { error };
+    const db = getDb();
+    const input = employeeInput(formData);
+    // Fiche et véhicule attribué sont enregistrés ensemble : si l'un échoue, rien n'est modifié.
+    transaction(db, () => {
+      const error = updateEmployee(db, ctx, employeeId, input);
+      if (error) throw new FieldError(error);
+      if (formData.has('vehicle_id')) {
+        const result = attributeVehicle(db, ctx, employeeId, optId(formData, 'vehicle_id'), checked(formData, 'apply_vehicle'));
+        if (result.error) throw new FieldError(result.error);
+        skipped = result.skipped.length;
+        moved = result.updated;
+      }
+    });
   } catch (error) {
     return toFormState(error);
   }
   revalidatePath('/', 'layout');
-  redirect(`/personnel/${employeeId}`);
+  redirect(`/personnel/${employeeId}?enregistre=1${moved ? `&deplaces=${moved}` : ''}${skipped ? `&ignores=${skipped}` : ''}`);
 }
 
 export async function licenceCheckAction(_: FormState, formData: FormData): Promise<FormState> {

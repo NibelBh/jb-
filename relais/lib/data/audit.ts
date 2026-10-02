@@ -1,6 +1,6 @@
 import 'server-only';
 import type { Ctx } from '../auth';
-import { type Db, all, run } from '../db';
+import { type Db, all, get, run } from '../db';
 
 export type Change = { field: string; label: string; before: unknown; after: unknown };
 
@@ -52,11 +52,9 @@ export type AuditRow = {
   created_at: string;
 };
 
-export function listAudit(
-  db: Db,
-  orgId: number,
-  filter: { entityType?: string; entityId?: number; limit?: number; q?: string } = {},
-): AuditRow[] {
+export type AuditFilter = { entityType?: string; entityId?: number; limit?: number; offset?: number; q?: string; action?: string };
+
+function auditWhere(orgId: number, filter: AuditFilter): { sql: string; params: (string | number)[] } {
   const where = ['org_id = ?'];
   const params: (string | number)[] = [orgId];
   if (filter.entityType) {
@@ -67,10 +65,24 @@ export function listAudit(
     where.push('entity_id = ?');
     params.push(filter.entityId);
   }
+  if (filter.action) {
+    where.push('action = ?');
+    params.push(filter.action);
+  }
   if (filter.q) {
     where.push('(summary LIKE ? OR actor LIKE ?)');
     params.push(`%${filter.q}%`, `%${filter.q}%`);
   }
-  params.push(filter.limit ?? 200);
-  return all<AuditRow>(db, `SELECT * FROM audit_log WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`, ...params);
+  return { sql: where.join(' AND '), params };
+}
+
+/** Événements du plus récent au plus ancien. Rien n'est jamais effacé : la limite ne concerne que l'affichage. */
+export function listAudit(db: Db, orgId: number, filter: AuditFilter = {}): AuditRow[] {
+  const { sql, params } = auditWhere(orgId, filter);
+  return all<AuditRow>(db, `SELECT * FROM audit_log WHERE ${sql} ORDER BY id DESC LIMIT ? OFFSET ?`, ...params, filter.limit ?? 200, filter.offset ?? 0);
+}
+
+export function countAudit(db: Db, orgId: number, filter: AuditFilter = {}): number {
+  const { sql, params } = auditWhere(orgId, filter);
+  return get<{ n: number }>(db, `SELECT COUNT(*) AS n FROM audit_log WHERE ${sql}`, ...params)?.n ?? 0;
 }

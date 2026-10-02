@@ -330,15 +330,18 @@ export function seedDemo(db: Db, today = parisDate()): void {
       org, ancien, parisLocalToIso(addDays(today, -12), '10:00'));
 
     // ---------- Amendes : une à désigner, une presque hors délai, une déjà désignée ----------
-    const fineOn = (back: number) => history.find((h) => h.start.slice(0, 10) === addDays(today, -back)) ?? history[0];
+    const fineOn = (back: number) => history.filter((h) => h.start.slice(0, 10) <= addDays(today, -back)).at(-1) ?? history[0];
     const f1 = fineOn(12);
     run(db, `INSERT INTO fines (org_id, vehicle_id, notice_number, offense_at, notice_sent_on, location, amount_cents, description, status)
       VALUES (?, ?, 'AVIS-0001', ?, ?, 'Boulevard périphérique, Paris', 13500, 'Excès de vitesse inférieur à 20 km/h', 'a_designer')`,
       org, f1.vehicle, new Date(Date.parse(f1.start) + 3 * 3600_000).toISOString(), addDays(today, -8));
-    const f2 = fineOn(19);
+    // Avis presque hors délai : infraction commise il y a 48 jours, avec une affectation saisie après coup.
+    const f2Start = parisLocalToIso(addDays(today, -48), '07:10');
+    run(db, `INSERT INTO assignments (org_id, vehicle_id, employee_id, started_at, ended_at, source) VALUES (?, ?, ?, ?, ?, 'saisie manuelle')`,
+      org, fleet[2], julie, f2Start, parisLocalToIso(addDays(today, -48), '16:05'));
     run(db, `INSERT INTO fines (org_id, vehicle_id, notice_number, offense_at, notice_sent_on, location, amount_cents, description, status)
       VALUES (?, ?, 'AVIS-0002', ?, ?, 'Rue de la République, Saint-Denis', 3500, 'Stationnement gênant', 'a_designer')`,
-      org, f2.vehicle, new Date(Date.parse(f2.start) + 5 * 3600_000).toISOString(), addDays(today, -41));
+      org, fleet[2], new Date(Date.parse(f2Start) + 5 * 3600_000).toISOString(), addDays(today, -41));
     const f3 = fineOn(15);
     run(db, `INSERT INTO fines (org_id, vehicle_id, notice_number, offense_at, notice_sent_on, location, amount_cents, description, status, employee_id, designated_on)
       VALUES (?, ?, 'AVIS-0003', ?, ?, 'Avenue Jean Jaurès, Aubervilliers', 13500, 'Feu rouge', 'designe', ?, ?)`,

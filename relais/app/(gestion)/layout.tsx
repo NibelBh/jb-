@@ -4,7 +4,7 @@ import { Logo } from '@/components/Logo';
 import { getSession } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { unreadCount } from '@/lib/data/notifications';
-import { type Module, canAccess, isManager, roleLabel } from '@/lib/domain/roles';
+import { ACCESS_LEVELS, type Module, accessLevel, canAccess, isManager } from '@/lib/domain/roles';
 import { logoutAction } from '../connexion/actions';
 import { SideNav } from './SideNav';
 import styles from './layout.module.css';
@@ -22,6 +22,11 @@ const NAV: { module: Module; href: string; label: string }[] = [
   { module: 'journal', href: '/journal', label: 'Journal' },
   { module: 'parametres', href: '/parametres', label: 'Membres et accès' },
 ];
+
+function todayLabel(): string {
+  const text = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
 
 export default async function GestionLayout({ children }: { children: React.ReactNode }) {
   const ctx = await getSession();
@@ -51,7 +56,7 @@ export default async function GestionLayout({ children }: { children: React.Reac
       </aside>
       <div className={styles.main}>
         <header className={styles.topbar}>
-          <div className={styles.stripes} aria-hidden="true" />
+          <span className={styles.context}>{todayLabel()}</span>
           <div className={styles.user}>
             <Link href="/notifications" className={styles.bell} aria-label={`Notifications, ${unread} non lue${unread > 1 ? 's' : ''}`}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -62,7 +67,7 @@ export default async function GestionLayout({ children }: { children: React.Reac
             </Link>
             <div className={styles.who}>
               <strong>{ctx.name}</strong>
-              <span className="small muted">{ctx.roles.map(roleLabel).join(', ')}</span>
+              <span className="small muted">{ACCESS_LEVELS.find((l) => l.value === accessLevel(ctx.roles))?.label}</span>
             </div>
             <form action={logoutAction}>
               <button type="submit" className="btn btn-ghost btn-sm">

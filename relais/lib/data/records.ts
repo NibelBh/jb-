@@ -153,7 +153,7 @@ export function correctOdometer(db: Db, ctx: Actor, id: number, km: number, reas
 
 // ---------- Salariés ----------
 
-export type EmployeeInput = Omit<EmployeeRow, 'id' | 'licence_checked_on'>;
+export type EmployeeInput = Omit<EmployeeRow, 'id' | 'licence_checked_on' | 'vehicle_id'>;
 
 const EMPLOYEE_LABELS: Partial<Record<keyof EmployeeRow, string>> = {
   payroll_id: 'Matricule paie',
@@ -277,6 +277,7 @@ export function updateEmployee(db: Db, ctx: Actor, id: number, input: EmployeeIn
     if (input.status === 'sorti' && employee.status !== 'sorti') {
       run(db, `DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE org_id = ? AND employee_id = ?)`, ctx.orgId, id);
       run(db, `UPDATE users SET active = 0 WHERE org_id = ? AND employee_id = ?`, ctx.orgId, id);
+      run(db, `UPDATE employees SET vehicle_id = NULL WHERE id = ? AND org_id = ?`, id, ctx.orgId);
     }
     logAudit(db, ctx, {
       action: 'modification',
@@ -303,6 +304,34 @@ export function recordLicenceCheck(db: Db, ctx: Actor, id: number, checkedOn: st
 }
 
 // ---------- Documents ----------
+
+/** La fiche suit les documents qui portent une échéance utilisée ailleurs (permis, assurance, contrôle technique). */
+function syncFromDocument(
+  db: Db,
+  ctx: Actor,
+  input: { entity: DocumentEntity; entityId: number; type: string; reference: string | null; issuedOn: string | null; expiresOn: string | null; syncLicence?: boolean },
+) {
+    // Le permis sert aux contrôles d'affectation : on garde la fiche salarié à jour.
+    if (input.syncLicence !== false && input.entity === 'employee' && input.type === 'permis' && input.expiresOn) {
+      run(db, `UPDATE employees SET licence_expires_on = ? WHERE id = ? AND org_id = ?`, input.expiresOn, input.entityId, ctx.orgId);
+    }
+    // Attestation d'assurance ou procès-verbal de contrôle technique : la fiche véhicule suit le document le plus récent.
+    if (input.entity === 'vehicle' && input.type === 'assurance' && input.expiresOn) {
+      run(
+        db,
+        `UPDATE vehicles SET insurance_start_on = COALESCE(?, insurance_start_on), insurance_end_on = ?, insurance_policy = COALESCE(?, insurance_policy)
+          WHERE id = ? AND org_id = ? AND (insurance_end_on IS NULL OR insurance_end_on <= ?)`,
+        input.issuedOn, input.expiresOn, input.reference, input.entityId, ctx.orgId, input.expiresOn,
+      );
+    }
+    if (input.entity === 'vehicle' && input.type === 'controle_technique' && input.issuedOn) {
+      run(
+        db,
+        `UPDATE vehicles SET ct_last_on = ?, ct_expires_on = ? WHERE id = ? AND org_id = ? AND (ct_last_on IS NULL OR ct_last_on <= ?)`,
+        input.issuedOn, input.expiresOn, input.entityId, ctx.orgId, input.issuedOn,
+      );
+    }
+}
 
 export function addDocument(
   db: Db,
@@ -339,32 +368,59 @@ export function addDocument(
       input.expiresOn,
       input.fileId,
     ).id;
-    // Le permis sert aux contrôles d'affectation : on garde la fiche salarié à jour.
-    if (input.syncLicence !== false && input.entity === 'employee' && input.type === 'permis' && input.expiresOn) {
-      run(db, `UPDATE employees SET licence_expires_on = ? WHERE id = ? AND org_id = ?`, input.expiresOn, input.entityId, ctx.orgId);
-    }
-    // Attestation d'assurance ou procès-verbal de contrôle technique : la fiche véhicule suit le document le plus récent.
-    if (input.entity === 'vehicle' && input.type === 'assurance' && input.expiresOn) {
-      run(
-        db,
-        `UPDATE vehicles SET insurance_start_on = COALESCE(?, insurance_start_on), insurance_end_on = ?, insurance_policy = COALESCE(?, insurance_policy)
-          WHERE id = ? AND org_id = ? AND (insurance_end_on IS NULL OR insurance_end_on <= ?)`,
-        input.issuedOn, input.expiresOn, input.reference, input.entityId, ctx.orgId, input.expiresOn,
-      );
-    }
-    if (input.entity === 'vehicle' && input.type === 'controle_technique' && input.issuedOn) {
-      run(
-        db,
-        `UPDATE vehicles SET ct_last_on = ?, ct_expires_on = ? WHERE id = ? AND org_id = ? AND (ct_last_on IS NULL OR ct_last_on <= ?)`,
-        input.issuedOn, input.expiresOn, input.entityId, ctx.orgId, input.issuedOn,
-      );
-    }
+    syncFromDocument(db, ctx, input);
     logAudit(db, ctx, {
       action: 'document',
       entityType: input.entity,
       entityId: input.entityId,
       summary: `Document ajouté : ${documentTypeLabel(input.entity, input.type)}${input.expiresOn ? `, expire le ${formatDate(input.expiresOn)}` : ''}.`,
       changes: [{ field: 'document', label: 'Document', before: null, after: id }],
+    });
+  });
+  return null;
+}
+
+/** Correction d'un document : type, référence, dates, et fichier remplacé si un nouveau est fourni. */
+export function updateDocument(
+  db: Db,
+  ctx: Actor,
+  documentId: number,
+  input: { type: string; reference: string | null; issuedOn: string | null; expiresOn: string | null; fileId: number | null },
+): string | null {
+  const doc = get<{ id: number; entity_type: DocumentEntity; entity_id: number; type: string; reference: string | null; issued_on: string | null; expires_on: string | null }>(
+    db,
+    `SELECT id, entity_type, entity_id, type, reference, issued_on, expires_on FROM documents WHERE id = ? AND org_id = ?`,
+    documentId,
+    ctx.orgId,
+  );
+  if (!doc) return 'Document introuvable.';
+  if (input.issuedOn && input.expiresOn && input.expiresOn < input.issuedOn) return 'La date d’expiration doit être après la date de délivrance.';
+  const changes: Change[] = [
+    { field: 'type', label: 'Type', before: documentTypeLabel(doc.entity_type, doc.type), after: documentTypeLabel(doc.entity_type, input.type) },
+    { field: 'reference', label: 'Référence', before: doc.reference, after: input.reference },
+    { field: 'issued_on', label: 'Délivré le', before: formatDate(doc.issued_on) || null, after: formatDate(input.issuedOn) || null },
+    { field: 'expires_on', label: 'Expire le', before: formatDate(doc.expires_on) || null, after: formatDate(input.expiresOn) || null },
+  ].filter((c) => (c.before ?? null) !== (c.after ?? null));
+  if (changes.length === 0 && !input.fileId) return null;
+  transaction(db, () => {
+    run(
+      db,
+      `UPDATE documents SET type = ?, reference = ?, issued_on = ?, expires_on = ?, file_id = COALESCE(?, file_id) WHERE id = ? AND org_id = ?`,
+      input.type,
+      input.reference,
+      input.issuedOn,
+      input.expiresOn,
+      input.fileId,
+      doc.id,
+      ctx.orgId,
+    );
+    syncFromDocument(db, ctx, { entity: doc.entity_type, entityId: doc.entity_id, ...input });
+    logAudit(db, ctx, {
+      action: 'document',
+      entityType: doc.entity_type,
+      entityId: doc.entity_id,
+      summary: `Document modifié : ${documentTypeLabel(doc.entity_type, input.type)} (${[...changes.map((c) => c.label.toLowerCase()), ...(input.fileId ? ['fichier remplacé'] : [])].join(', ')}).`,
+      changes,
     });
   });
   return null;

@@ -11,15 +11,15 @@ function show(value: unknown, field: string): string {
   return String(value);
 }
 
-export function AuditList({ rows, title = 'Historique' }: { rows: AuditRow[]; title?: string }) {
+export function AuditList({ rows, title = 'Historique', empty = 'Aucune modification enregistrée pour l’instant.' }: { rows: AuditRow[]; title?: string; empty?: string }) {
   return (
     <section className="card">
       <div className="card-head">
-        <h2 className="section-title">{title}</h2>
+        <h2>{title}</h2>
       </div>
       <div className="card-body">
         {rows.length === 0 ? (
-          <p className="muted">Aucun événement.</p>
+          <p className="muted">{empty}</p>
         ) : (
           <ol className="timeline">
             {rows.map((r) => {
@@ -28,7 +28,7 @@ export function AuditList({ rows, title = 'Historique' }: { rows: AuditRow[]; ti
                 <li key={r.id}>
                   <div>{r.summary}</div>
                   <div className="small muted">
-                    {formatDateTime(r.created_at)} · {r.actor} · {r.origin === 'mobile' ? 'application mobile' : r.origin === 'systeme' ? 'système' : 'back-office'}
+                    {formatDateTime(r.created_at)} · {r.actor} · {r.origin === 'mobile' ? 'depuis l’application chauffeur' : r.origin === 'systeme' ? 'automatique' : 'depuis le bureau'}
                   </div>
                   {changes.length > 0 && (
                     <ul className="small" style={{ margin: '4px 0 0', paddingLeft: 16 }}>

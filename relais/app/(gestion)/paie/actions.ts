@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { requireAction } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { addPayrollItem, deletePayrollItem, importPayrollJournal, savePayrollCodes } from '@/lib/data/payroll';
+import { addPayrollItem, deletePayrollItem, updatePayrollItem, importPayrollJournal, savePayrollCodes } from '@/lib/data/payroll';
 import { parseDecimalCell } from '@/lib/domain/importing';
 import { type PayrollCodes, MANUAL_VARIABLES, PAYROLL_VARIABLES, isPeriod } from '@/lib/domain/payroll';
 import { FieldError, type FormState, csvInput, id, oneOf, optText, reportState, toFormState } from '@/lib/forms';
@@ -77,6 +77,20 @@ export async function importPayrollJournalAction(_: FormState, formData: FormDat
     const { report, summary } = importPayrollJournal(getDb(), ctx, text, period(formData), commit);
     if (commit) revalidatePath('/paie');
     return reportState(report, summary);
+  } catch (error) {
+    return toFormState(error);
+  }
+}
+
+export async function updatePayrollItemAction(_: FormState, formData: FormData): Promise<FormState> {
+  try {
+    const ctx = await requireAction('paie.gerer');
+    const value = parseDecimalCell(String(formData.get('value') ?? ''));
+    if (!value.ok || value.value === null) throw new FieldError('Indiquez une valeur (ex. 150 ou 7,5).');
+    const error = updatePayrollItem(getDb(), ctx, id(formData, 'itemId'), { value: value.value, note: optText(formData, 'note', 200) });
+    if (error) return { error };
+    revalidatePath('/paie');
+    return { ok: 'Élément modifié.' };
   } catch (error) {
     return toFormState(error);
   }

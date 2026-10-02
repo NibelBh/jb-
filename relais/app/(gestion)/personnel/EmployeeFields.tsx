@@ -7,9 +7,8 @@ export function EmployeeFields({ employee }: { employee?: EmployeeRow }) {
   const cats = new Set((employee?.licence_categories ?? 'B').split(',').filter(Boolean));
   return (
     <>
-      <fieldset className="form-grid" style={{ border: '1px solid var(--grey-200)', borderRadius: 8, padding: 14 }}>
-        <legend className="small" style={{ fontWeight: 800, padding: '0 6px' }}>
-          Informations personnelles
+      <fieldset className="form-grid fieldset">
+        <legend>Informations personnelles
         </legend>
         <div className="field">
           <label htmlFor="first_name">Prénom</label>
@@ -61,9 +60,8 @@ export function EmployeeFields({ employee }: { employee?: EmployeeRow }) {
         </div>
       </fieldset>
 
-      <fieldset className="form-grid" style={{ border: '1px solid var(--grey-200)', borderRadius: 8, padding: 14 }}>
-        <legend className="small" style={{ fontWeight: 800, padding: '0 6px' }}>
-          Poste et contrat
+      <fieldset className="form-grid fieldset">
+        <legend>Poste et contrat
         </legend>
         <div className="field">
           <label htmlFor="payroll_id">Matricule paie</label>
@@ -112,9 +110,8 @@ export function EmployeeFields({ employee }: { employee?: EmployeeRow }) {
         </div>
       </fieldset>
 
-      <fieldset className="form-grid" style={{ border: '1px solid var(--grey-200)', borderRadius: 8, padding: 14 }}>
-        <legend className="small" style={{ fontWeight: 800, padding: '0 6px' }}>
-          Permis de conduire
+      <fieldset className="form-grid fieldset">
+        <legend>Permis de conduire
         </legend>
         <div className="field">
           <label htmlFor="licence_number">Numéro</label>

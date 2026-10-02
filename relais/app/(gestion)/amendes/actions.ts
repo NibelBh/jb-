@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireAction } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { createFine, designateDriver, setFineStatus } from '@/lib/data/cases';
+import { createFine, designateDriver, setFineStatus, updateFine } from '@/lib/data/cases';
 import { saveUpload } from '@/lib/data/files';
 import { parisDate, parisLocalToIso } from '@/lib/domain/dates';
 import { FINE_STATUSES } from '@/lib/domain/labels';
@@ -67,4 +67,31 @@ export async function setFineStatusAction(_: FormState, formData: FormData): Pro
   } catch (error) {
     return toFormState(error);
   }
+}
+
+export async function updateFineAction(_: FormState, formData: FormData): Promise<FormState> {
+  const fineId = Number(formData.get('fineId'));
+  try {
+    const ctx = await requireAction('amende.modifier');
+    const db = getDb();
+    const offenseDay = date(formData, 'offenseDay', 'Date de l’infraction');
+    const noticeSentOn = date(formData, 'noticeSentOn', 'Date d’envoi de l’avis');
+    if (noticeSentOn > parisDate()) throw new FieldError('La date d’envoi de l’avis est dans le futur.');
+    const noticeFileId = await saveUpload(db, ctx, formData.get('notice'));
+    const error = updateFine(db, ctx, fineId, {
+      vehicleId: id(formData, 'vehicleId'),
+      noticeNumber: optText(formData, 'noticeNumber', 60),
+      offenseAt: parisLocalToIso(offenseDay, time(formData, 'offenseTime', 'Heure de l’infraction')),
+      noticeSentOn,
+      location: optText(formData, 'location', 200),
+      amountCents: optEuros(formData, 'amount', 'Montant'),
+      description: optText(formData, 'description', 500),
+      noticeFileId,
+    });
+    if (error) return { error };
+  } catch (error) {
+    return toFormState(error);
+  }
+  revalidatePath('/amendes', 'layout');
+  redirect(`/amendes/${fineId}?enregistre=1`);
 }

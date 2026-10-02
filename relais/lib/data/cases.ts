@@ -3,7 +3,8 @@ import type { Ctx } from '../auth';
 import { type Db, all, get, run, transaction } from '../db';
 import { formatDate, formatDateTime } from '../domain/dates';
 import { designationDeadline } from '../domain/fines';
-import { FINE_STATUSES, labelOf } from '../domain/labels';
+import { DAMAGE_TYPES, FINE_STATUSES, SEVERITIES, labelOf } from '../domain/labels';
+import { parseZones, zonesLabel } from '../domain/zones';
 import { logAudit } from './audit';
 import { fullName, getEmployee } from './employees';
 import { notify } from './notifications';
@@ -114,6 +115,100 @@ export function setDamageCosts(db: Db, ctx: Actor, damageId: number, estimated: 
   return null;
 }
 
+export type DamageEdit = {
+  vehicleId: number;
+  employeeId: number | null;
+  type: string;
+  severity: string;
+  description: string;
+  occurredAt: string;
+  locationText: string | null;
+  zones: string[];
+};
+
+/** Correction d'un dossier dommage : chaque champ modifié est tracé dans le dossier et le journal. */
+export function updateDamage(db: Db, ctx: Actor, damageId: number, input: DamageEdit): string | null {
+  const damage = getDamage(db, ctx.orgId, damageId);
+  if (!damage) return 'Dossier introuvable.';
+  const vehicle = getVehicle(db, ctx.orgId, input.vehicleId);
+  if (!vehicle) return 'Véhicule introuvable.';
+  const employee = input.employeeId ? getEmployee(db, ctx.orgId, input.employeeId) : undefined;
+  if (input.employeeId && !employee) return 'Salarié introuvable.';
+  if (Date.parse(input.occurredAt) > Date.now() + 5 * 60_000) return 'La date du constat ne peut pas être dans le futur.';
+  const zones = parseZones(input.zones.join(',')).join(',');
+  const changes = [
+    { field: 'vehicle_id', label: 'Véhicule', before: damage.plate, after: vehicle.plate },
+    { field: 'employee_id', label: 'Conducteur', before: damage.employee_name, after: employee ? fullName(employee) : null },
+    { field: 'type', label: 'Type', before: labelOf(DAMAGE_TYPES, damage.type), after: labelOf(DAMAGE_TYPES, input.type) },
+    { field: 'severity', label: 'Gravité', before: labelOf(SEVERITIES, damage.severity), after: labelOf(SEVERITIES, input.severity) },
+    { field: 'occurred_at', label: 'Date du constat', before: formatDateTime(damage.occurred_at), after: formatDateTime(input.occurredAt) },
+    { field: 'location_text', label: 'Lieu', before: damage.location_text, after: input.locationText },
+    { field: 'zones', label: 'Zones touchées', before: zonesLabel(damage.zones) || null, after: zonesLabel(zones) || null },
+    { field: 'description', label: 'Description', before: damage.description, after: input.description },
+  ].filter((c) => (c.before ?? null) !== (c.after ?? null));
+  if (changes.length === 0) return null;
+  transaction(db, () => {
+    run(
+      db,
+      `UPDATE damages SET vehicle_id = ?, employee_id = ?, type = ?, severity = ?, description = ?, occurred_at = ?, location_text = ?, zones = ?
+        WHERE id = ? AND org_id = ?`,
+      vehicle.id,
+      employee?.id ?? null,
+      input.type,
+      input.severity,
+      input.description,
+      input.occurredAt,
+      input.locationText,
+      zones,
+      damage.id,
+      ctx.orgId,
+    );
+    const what = changes.map((c) => c.label.toLowerCase()).join(', ');
+    run(
+      db,
+      `INSERT INTO damage_events (org_id, damage_id, user_id, author, kind, text) VALUES (?, ?, ?, ?, 'commentaire', ?)`,
+      ctx.orgId,
+      damage.id,
+      ctx.userId,
+      ctx.name,
+      `Dossier modifié : ${what}.`,
+    );
+    logAudit(db, ctx, { action: 'modification', entityType: 'damage', entityId: damage.id, summary: `Dossier dommage n° ${damage.id} modifié (${what}).`, changes });
+  });
+  return null;
+}
+
+/** Ajoute des photos à un dossier ; avec `replaceId`, la nouvelle photo remplace celle-ci. */
+export function addDamagePhotos(db: Db, ctx: Actor, damageId: number, fileIds: number[], replaceId: number | null = null): string | null {
+  const damage = getDamage(db, ctx.orgId, damageId);
+  if (!damage) return 'Dossier introuvable.';
+  if (fileIds.length === 0) return 'Choisissez au moins une photo.';
+  const photos = (JSON.parse(damage.photos) as number[]).filter((id) => id !== replaceId);
+  if (replaceId !== null && photos.length === (JSON.parse(damage.photos) as number[]).length) return 'Photo à remplacer introuvable.';
+  const next = [...photos, ...fileIds].slice(0, 20);
+  transaction(db, () => {
+    run(db, `UPDATE damages SET photos = ? WHERE id = ? AND org_id = ?`, JSON.stringify(next), damage.id, ctx.orgId);
+    logAudit(db, ctx, {
+      action: 'piece',
+      entityType: 'damage',
+      entityId: damage.id,
+      summary: replaceId !== null ? `Photo remplacée dans le dossier dommage n° ${damage.id}.` : `${fileIds.length} photo(s) ajoutée(s) au dossier dommage n° ${damage.id}.`,
+    });
+  });
+  return null;
+}
+
+/** Retire une photo du dossier (le fichier reste archivé et lisible depuis le journal). */
+export function removeDamagePhoto(db: Db, ctx: Actor, damageId: number, fileId: number): string | null {
+  const damage = getDamage(db, ctx.orgId, damageId);
+  if (!damage) return 'Dossier introuvable.';
+  const photos = JSON.parse(damage.photos) as number[];
+  if (!photos.includes(fileId)) return 'Photo introuvable.';
+  run(db, `UPDATE damages SET photos = ? WHERE id = ? AND org_id = ?`, JSON.stringify(photos.filter((id) => id !== fileId)), damage.id, ctx.orgId);
+  logAudit(db, ctx, { action: 'piece', entityType: 'damage', entityId: damage.id, summary: `Une photo a été retirée du dossier dommage n° ${damage.id}.` });
+  return null;
+}
+
 // ---------- Amendes ----------
 
 export type FineRow = {
@@ -190,6 +285,50 @@ export function createFine(db: Db, ctx: Actor, input: FineInput): number {
     });
     return id;
   });
+}
+
+/** Correction des informations d'un avis (numéro, date, lieu, montant…). */
+export function updateFine(db: Db, ctx: Actor, fineId: number, input: Omit<FineInput, 'noticeFileId'> & { noticeFileId: number | null }): string | null {
+  const fine = getFine(db, ctx.orgId, fineId);
+  if (!fine) return 'Avis introuvable.';
+  const vehicle = getVehicle(db, ctx.orgId, input.vehicleId);
+  if (!vehicle) return 'Véhicule introuvable.';
+  if (input.noticeSentOn < input.offenseAt.slice(0, 10)) return 'L’avis ne peut pas être envoyé avant l’infraction.';
+  const changes = [
+    { field: 'vehicle_id', label: 'Véhicule', before: fine.plate, after: vehicle.plate },
+    { field: 'notice_number', label: 'Numéro d’avis', before: fine.notice_number, after: input.noticeNumber },
+    { field: 'offense_at', label: 'Date de l’infraction', before: formatDateTime(fine.offense_at), after: formatDateTime(input.offenseAt) },
+    { field: 'notice_sent_on', label: 'Date d’envoi de l’avis', before: formatDate(fine.notice_sent_on), after: formatDate(input.noticeSentOn) },
+    { field: 'location', label: 'Lieu', before: fine.location, after: input.location },
+    { field: 'amount_cents', label: 'Montant (centimes)', before: fine.amount_cents, after: input.amountCents },
+    { field: 'description', label: 'Infraction', before: fine.description, after: input.description },
+  ].filter((c) => (c.before ?? null) !== (c.after ?? null));
+  if (changes.length === 0 && !input.noticeFileId) return null;
+  transaction(db, () => {
+    run(
+      db,
+      `UPDATE fines SET vehicle_id = ?, notice_number = ?, offense_at = ?, notice_sent_on = ?, location = ?, amount_cents = ?, description = ?,
+         notice_file_id = COALESCE(?, notice_file_id) WHERE id = ? AND org_id = ?`,
+      vehicle.id,
+      input.noticeNumber,
+      input.offenseAt,
+      input.noticeSentOn,
+      input.location,
+      input.amountCents,
+      input.description,
+      input.noticeFileId,
+      fine.id,
+      ctx.orgId,
+    );
+    logAudit(db, ctx, {
+      action: 'modification',
+      entityType: 'fine',
+      entityId: fine.id,
+      summary: `Avis ${input.noticeNumber ?? `n° ${fine.id}`} modifié (${[...changes.map((c) => c.label.toLowerCase()), ...(input.noticeFileId ? ['scan de l’avis'] : [])].join(', ')}).`,
+      changes,
+    });
+  });
+  return null;
 }
 
 export function designateDriver(

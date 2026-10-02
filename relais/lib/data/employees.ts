@@ -30,6 +30,8 @@ export type EmployeeRow = {
   licence_expires_on: string | null;
   licence_checked_on: string | null;
   notes: string | null;
+  /** Véhicule attribué : proposé par défaut au planning. */
+  vehicle_id: number | null;
 };
 
 export function fullName(e: Pick<EmployeeRow, 'first_name' | 'last_name'>): string {

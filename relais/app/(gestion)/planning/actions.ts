@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireAction } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { addAbsence, confirmPresence, createShifts, deleteAbsence, deleteShift, markAbsent, reassignShift, updateShift } from '@/lib/data/planning';
+import { addAbsence, confirmPresence, createShifts, deleteAbsence, deleteShift, markAbsent, reassignShift, updateAbsence, updateShift } from '@/lib/data/planning';
 import { addDays, parisDate } from '@/lib/domain/dates';
 import { ABSENCE_TYPES } from '@/lib/domain/labels';
 import { normalizeTime } from '@/lib/domain/shifts';
@@ -154,6 +154,24 @@ export async function deleteAbsenceAction(_: FormState, formData: FormData): Pro
     const ctx = await requireAction('absence.modifier');
     deleteAbsence(getDb(), ctx, id(formData, 'absenceId'));
     return done();
+  } catch (error) {
+    return toFormState(error);
+  }
+}
+
+export async function updateAbsenceAction(_: FormState, formData: FormData): Promise<FormState> {
+  try {
+    const ctx = await requireAction('absence.modifier');
+    const startOn = date(formData, 'startOn', 'Début');
+    const endOn = String(formData.get('endOn') ?? '') ? date(formData, 'endOn', 'Fin') : startOn;
+    const result = updateAbsence(getDb(), ctx, id(formData, 'absenceId'), {
+      type: oneOf(formData, 'type', ABSENCE_TYPES, 'Type'),
+      startOn,
+      endOn,
+      note: optText(formData, 'note', 500),
+    });
+    if (result.error) return { error: result.error };
+    return done(result.freed ? `Absence modifiée. ${result.freed} créneau(x) libéré(s), à couvrir dans le planning.` : 'Absence modifiée.');
   } catch (error) {
     return toFormState(error);
   }

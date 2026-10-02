@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { requireAction } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { saveUpload } from '@/lib/data/files';
-import { addDocument, deleteDocument } from '@/lib/data/records';
+import { addDocument, deleteDocument, updateDocument } from '@/lib/data/records';
 import { type DocumentEntity, isDocumentType } from '@/lib/domain/documents';
 import { type FormState, id, optDate, optText, toFormState } from '@/lib/forms';
 
@@ -41,6 +41,29 @@ export async function deleteDocumentAction(_: FormState, formData: FormData): Pr
     deleteDocument(getDb(), ctx, id(formData, 'documentId'));
     revalidatePath('/', 'layout');
     return undefined;
+  } catch (error) {
+    return toFormState(error);
+  }
+}
+
+export async function updateDocumentAction(_: FormState, formData: FormData): Promise<FormState> {
+  try {
+    const ctx = await requireAction('document.modifier');
+    const entity = String(formData.get('entity')) as DocumentEntity;
+    const type = String(formData.get('type') ?? '');
+    if (!isDocumentType(entity, type)) return { error: 'Choisissez un type de document.' };
+    const db = getDb();
+    const fileId = await saveUpload(db, ctx, formData.get('file'));
+    const error = updateDocument(db, ctx, id(formData, 'documentId'), {
+      type,
+      reference: optText(formData, 'reference', 120),
+      issuedOn: optDate(formData, 'issuedOn', 'Date de délivrance'),
+      expiresOn: optDate(formData, 'expiresOn', 'Date d’expiration'),
+      fileId,
+    });
+    if (error) return { error };
+    revalidatePath('/', 'layout');
+    return { ok: 'Document mis à jour.' };
   } catch (error) {
     return toFormState(error);
   }

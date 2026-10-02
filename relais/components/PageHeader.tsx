@@ -13,17 +13,17 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header style={{ display: 'grid', gap: 6, marginBottom: 20 }}>
+    <header style={{ display: 'grid', gap: 4, marginBottom: 22 }}>
       {back && (
         <Link href={back.href} className="small muted" style={{ textDecoration: 'none', fontWeight: 600 }}>
           ← {back.label}
         </Link>
       )}
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <h1 className="section-title">{title}</h1>
+        <h1>{title}</h1>
         {actions && <div className="btn-row">{actions}</div>}
       </div>
-      {subtitle && <p className="muted">{subtitle}</p>}
+      {subtitle && <p className="muted" style={{ maxWidth: 820 }}>{subtitle}</p>}
     </header>
   );
 }

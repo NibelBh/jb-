@@ -1,4 +1,8 @@
-export type EmployeeOption = { id: number; name: string; unavailable: string | null; driver: boolean };
+'use client';
+
+import { useState } from 'react';
+
+export type EmployeeOption = { id: number; name: string; unavailable: string | null; driver: boolean; vehicleId: number | null };
 export type VehicleOption = { id: number; plate: string; problem: string | null };
 
 export type ShiftDefaults = {
@@ -37,12 +41,26 @@ export function ShiftFields({
   defaults: ShiftDefaults;
   repeat?: boolean;
 }) {
+  // Le véhicule attribué au salarié est proposé d'office ; on peut toujours en choisir un autre.
+  const [employeeId, setEmployeeId] = useState<string>(defaults.employeeId ? String(defaults.employeeId) : '');
+  const [vehicleId, setVehicleId] = useState<string>(defaults.vehicleId ? String(defaults.vehicleId) : '');
+  const attributed = (id: string) => employees.find((e) => String(e.id) === id)?.vehicleId ?? null;
+  const onEmployee = (id: string) => {
+    const previous = attributed(employeeId);
+    if (!vehicleId || (previous && String(previous) === vehicleId)) {
+      const next = attributed(id);
+      const usable = next && !vehicles.find((v) => v.id === next)?.problem;
+      setVehicleId(usable ? String(next) : '');
+    }
+    setEmployeeId(id);
+  };
+  const hint = attributed(employeeId);
   return (
     <>
       <div className="form-grid">
         <div className="field">
           <label htmlFor={`${prefix}-employee`}>Salarié</label>
-          <select id={`${prefix}-employee`} name="employeeId" className="input" defaultValue={defaults.employeeId ?? ''}>
+          <select id={`${prefix}-employee`} name="employeeId" className="input" value={employeeId} onChange={(e) => onEmployee(e.currentTarget.value)}>
             <option value="">Sans salarié (tournée à pourvoir)</option>
             {employees.map((e) => (
               <option key={e.id} value={e.id} disabled={!!e.unavailable && e.id !== defaults.employeeId}>
@@ -83,12 +101,13 @@ export function ShiftFields({
         </div>
         <div className="field">
           <label htmlFor={`${prefix}-vehicle`}>Véhicule</label>
-          <select id={`${prefix}-vehicle`} name="vehicleId" className="input" defaultValue={defaults.vehicleId ?? ''}>
+          <select id={`${prefix}-vehicle`} name="vehicleId" className="input" value={vehicleId} onChange={(e) => setVehicleId(e.currentTarget.value)}>
             <option value="">Aucun</option>
             {vehicles.map((v) => (
               <option key={v.id} value={v.id} disabled={!!v.problem && v.id !== defaults.vehicleId}>
                 {v.plate}
                 {v.problem ? ` (${v.problem})` : ''}
+                {hint === v.id ? ' · attribué au salarié' : ''}
               </option>
             ))}
           </select>

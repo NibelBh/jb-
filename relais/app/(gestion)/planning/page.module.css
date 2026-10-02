@@ -101,8 +101,7 @@
   flex-wrap: wrap;
   gap: 6px;
   align-items: flex-start;
-  justify-content: flex-end;
-  min-width: 250px;
+  min-width: 200px;
 }
 
 .actions :global(.btn) {

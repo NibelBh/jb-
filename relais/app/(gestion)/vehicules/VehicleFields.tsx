@@ -60,9 +60,8 @@ export function VehicleFields({ vehicle }: { vehicle?: VehicleRow }) {
         </div>
       </div>
 
-      <fieldset className="form-grid" style={{ border: '1px solid var(--grey-200)', borderRadius: 8, padding: 14 }}>
-        <legend className="small" style={{ fontWeight: 800, padding: '0 6px' }}>
-          Assurance
+      <fieldset className="form-grid fieldset">
+        <legend>Assurance
         </legend>
         <div className="field">
           <label htmlFor="insurer">Assureur</label>
@@ -83,9 +82,8 @@ export function VehicleFields({ vehicle }: { vehicle?: VehicleRow }) {
         </div>
       </fieldset>
 
-      <fieldset className="form-grid" style={{ border: '1px solid var(--grey-200)', borderRadius: 8, padding: 14 }}>
-        <legend className="small" style={{ fontWeight: 800, padding: '0 6px' }}>
-          Contrôle technique
+      <fieldset className="form-grid fieldset">
+        <legend>Contrôle technique
         </legend>
         <div className="field">
           <label htmlFor="ct_last_on">Date du dernier contrôle</label>

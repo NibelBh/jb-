@@ -1,4 +1,4 @@
-import { addDocumentAction, deleteDocumentAction } from '@/app/(gestion)/documents/actions';
+import { addDocumentAction, deleteDocumentAction, updateDocumentAction } from '@/app/(gestion)/documents/actions';
 import { ActionForm } from '@/components/ActionForm';
 import { ExpiryBadge } from '@/components/badges';
 import type { DocumentRow } from '@/lib/data/documents';
@@ -26,7 +26,7 @@ export function DocumentsPanel({
         <h2 className="section-title">{title}</h2>
       </div>
       {documents.length === 0 ? (
-        <p className="empty">Aucun document enregistré.</p>
+        <p className="empty">Aucun document pour l’instant. Ajoutez-les pour être prévenu avant leur expiration.</p>
       ) : (
         <div className="table-wrap">
           <table className="table">
@@ -64,9 +64,42 @@ export function DocumentsPanel({
                   </td>
                   <td>
                     {editable && (
-                      <ActionForm action={deleteDocumentAction} submitLabel="Supprimer" submitClassName="btn btn-ghost btn-sm" className="btn-row" confirmMessage="Supprimer ce document ?">
-                        <input type="hidden" name="documentId" value={d.id} />
-                      </ActionForm>
+                      <details className="disclosure small">
+                        <summary>Modifier</summary>
+                        <ActionForm action={updateDocumentAction} submitLabel="Enregistrer" submitClassName="btn btn-sm">
+                          <input type="hidden" name="documentId" value={d.id} />
+                          <input type="hidden" name="entity" value={entity} />
+                          <div className="field">
+                            <label htmlFor={`doc-${d.id}-type`}>Type</label>
+                            <select id={`doc-${d.id}-type`} name="type" className="input" defaultValue={d.type}>
+                              {DOCUMENT_TYPES[entity].map((t) => (
+                                <option key={t.value} value={t.value}>
+                                  {t.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="field">
+                            <label htmlFor={`doc-${d.id}-ref`}>Référence</label>
+                            <input id={`doc-${d.id}-ref`} name="reference" className="input" defaultValue={d.reference ?? ''} />
+                          </div>
+                          <div className="field">
+                            <label htmlFor={`doc-${d.id}-issued`}>Délivré le</label>
+                            <input id={`doc-${d.id}-issued`} name="issuedOn" type="date" className="input" defaultValue={d.issued_on ?? ''} />
+                          </div>
+                          <div className="field">
+                            <label htmlFor={`doc-${d.id}-exp`}>Expire le</label>
+                            <input id={`doc-${d.id}-exp`} name="expiresOn" type="date" className="input" defaultValue={d.expires_on ?? ''} />
+                          </div>
+                          <div className="field">
+                            <label htmlFor={`doc-${d.id}-file`}>{d.file_id ? 'Remplacer le fichier' : 'Joindre le fichier'}</label>
+                            <input id={`doc-${d.id}-file`} name="file" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" className="input" />
+                          </div>
+                        </ActionForm>
+                        <ActionForm action={deleteDocumentAction} submitLabel="Supprimer ce document" submitClassName="btn btn-danger btn-sm" className="btn-row" confirmMessage="Supprimer ce document ?">
+                          <input type="hidden" name="documentId" value={d.id} />
+                        </ActionForm>
+                      </details>
                     )}
                   </td>
                 </tr>

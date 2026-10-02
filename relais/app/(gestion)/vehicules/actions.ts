@@ -3,12 +3,14 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireAction } from '@/lib/auth';
-import { getDb } from '@/lib/db';
+import { getDb, transaction } from '@/lib/db';
+import { attributeVehicle } from '@/lib/data/planning';
+import { getVehicle, vehicleHolder } from '@/lib/data/vehicles';
 import { recordPastAssignment, reviewInspection, setVehicleStatus } from '@/lib/data/operations';
 import { type VehicleInput, correctOdometer, createVehicle, updateVehicle } from '@/lib/data/records';
 import { parisLocalToIso } from '@/lib/domain/dates';
 import { ENERGIES, VEHICLE_TYPES } from '@/lib/domain/labels';
-import { FieldError, type FormState, date, id, int, oneOf, optDate, optInt, optText, text, time, toFormState } from '@/lib/forms';
+import { FieldError, type FormState, checked, date, id, int, oneOf, optDate, optId, optInt, optText, text, time, toFormState } from '@/lib/forms';
 
 function vehicleInput(formData: FormData): VehicleInput {
   const year = optInt(formData, 'year', 'Année');
@@ -52,13 +54,37 @@ export async function updateVehicleAction(_: FormState, formData: FormData): Pro
   const vehicleId = Number(formData.get('vehicleId'));
   try {
     const ctx = await requireAction('vehicule.modifier');
-    const error = updateVehicle(getDb(), ctx, vehicleId, vehicleInput(formData));
-    if (error) return { error };
+    const db = getDb();
+    const input = vehicleInput(formData);
+    transaction(db, () => {
+      const error = updateVehicle(db, ctx, vehicleId, input);
+      if (error) throw new FieldError(error);
+      // Kilométrage actuel : toute correction est tracée avec l'ancienne valeur.
+      const km = optInt(formData, 'current_km', 'Kilométrage actuel');
+      const vehicle = getVehicle(db, ctx.orgId, vehicleId);
+      if (km !== null && vehicle && km !== vehicle.current_km) {
+        const kmError = correctOdometer(db, ctx, vehicleId, km, optText(formData, 'km_reason', 300) ?? 'Correction depuis la fiche du véhicule');
+        if (kmError) throw new FieldError(kmError);
+      }
+      // Salarié à qui le véhicule est attribué.
+      if (formData.has('holder_id')) {
+        const holderId = optId(formData, 'holder_id');
+        const previous = vehicleHolder(db, ctx.orgId, vehicleId);
+        if (previous && previous.id !== holderId) {
+          const r = attributeVehicle(db, ctx, previous.id, null, false);
+          if (r.error) throw new FieldError(r.error);
+        }
+        if (holderId && previous?.id !== holderId) {
+          const r = attributeVehicle(db, ctx, holderId, vehicleId, checked(formData, 'apply_vehicle'));
+          if (r.error) throw new FieldError(r.error);
+        }
+      }
+    });
   } catch (error) {
     return toFormState(error);
   }
-  revalidatePath('/vehicules');
-  redirect(`/vehicules/${vehicleId}`);
+  revalidatePath('/', 'layout');
+  redirect(`/vehicules/${vehicleId}?enregistre=1`);
 }
 
 export async function setVehicleStatusAction(_: FormState, formData: FormData): Promise<FormState> {

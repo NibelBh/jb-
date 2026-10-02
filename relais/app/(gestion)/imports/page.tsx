@@ -3,75 +3,97 @@ import Link from 'next/link';
 import { ImportForm } from '@/components/ImportForm';
 import { PageHeader } from '@/components/PageHeader';
 import { requireModule } from '@/lib/auth';
-import { IMPORT_KINDS, type ImportKind } from '@/lib/data/imports';
+import { IMPORT_KINDS, type ImportKind, importColumns } from '@/lib/data/imports';
 import { can, canAccess } from '@/lib/domain/roles';
 import { importAction } from './actions';
 
 export const metadata: Metadata = { title: 'Imports CSV' };
 
-const ORDER: ImportKind[] = ['personnel', 'vehicules', 'planning', 'documents', 'absences'];
+const ORDER: ImportKind[] = ['personnel', 'vehicules', 'planning', 'absences', 'documents'];
 
-export default async function ImportsPage() {
+export default async function ImportsPage(props: PageProps<'/imports'>) {
   const ctx = await requireModule('imports');
+  const params = await props.searchParams;
   const kinds = ORDER.filter((k) => can(ctx.roles, IMPORT_KINDS[k].action));
+  const kind = kinds.find((k) => k === params.type) ?? kinds[0];
 
   return (
     <>
       <PageHeader
         title="Imports CSV"
-        subtitle="Reprenez vos fichiers Excel existants plutôt que de tout ressaisir. Chaque import se vérifie d’abord : le rapport indique ce qui sera créé, mis à jour ou refusé, ligne par ligne, avant tout enregistrement."
+        subtitle="Reprenez vos fichiers Excel au lieu de tout ressaisir. Téléchargez le modèle, remplissez-le, puis vérifiez-le : rien n’est enregistré avant que vous cliquiez sur « Importer »."
       />
 
-      <p className="alert" style={{ marginBottom: 16 }}>
-        Ordre conseillé pour démarrer : personnel, puis véhicules, puis documents et échéances, puis absences. Les colonnes marquées d’un astérisque sont obligatoires ; les autres peuvent rester vides ou absentes.
-      </p>
+      <nav className="tabs" aria-label="Type d’import">
+        {kinds.map((k) => (
+          <Link key={k} href={`/imports?type=${k}`} className={k === kind ? 'tab tab-on' : 'tab'} aria-current={k === kind ? 'page' : undefined}>
+            {IMPORT_KINDS[k].label}
+          </Link>
+        ))}
+      </nav>
 
-      <div className="grid-2">
-        {kinds.map((kind) => {
-          const k = IMPORT_KINDS[kind];
-          return (
-            <section key={kind} className="card">
-              <div className="card-head">
-                <h2 className="section-title">{k.label}</h2>
+      {kind && (
+        <div className="grid-2" style={{ alignItems: 'start' }}>
+          <section className="card">
+            <div className="card-head">
+              <h2>1. Préparer le fichier</h2>
+              <a href={`/api/modeles/${kind}`} download className="btn btn-yellow btn-sm">
+                Télécharger le modèle CSV
+              </a>
+            </div>
+            <div className="card-body stack">
+              <p>{IMPORT_KINDS[kind].help}</p>
+              <p className="small muted">
+                Le modèle contient les bonnes colonnes et une ligne d’exemple à remplacer. Une colonne marquée * est obligatoire ; les autres peuvent rester vides. Gardez la
+                première ligne telle quelle : c’est elle qui permet au logiciel de reconnaître les colonnes.
+              </p>
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Colonne</th>
+                      <th>Format attendu</th>
+                      <th>Exemple</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importColumns(kind).map((c) => (
+                      <tr key={c.header}>
+                        <td className="nowrap">
+                          <strong>{c.header}</strong>
+                          {c.required && <span className="badge badge-yellow" style={{ marginLeft: 6 }}>obligatoire</span>}
+                        </td>
+                        <td className="small">{[c.format, c.hint].filter(Boolean).join(' · ') || <span className="muted">Texte libre</span>}</td>
+                        <td className="small mono">{c.example || <span className="muted">·</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <div className="card-body stack">
-                <p className="small">{k.help}</p>
-                <p className="small">
-                  <strong>Colonnes :</strong>{' '}
-                  {k.columns.map((c, i) => (
-                    <span key={c}>
-                      {i > 0 && ', '}
-                      <code style={{ fontWeight: c.endsWith('*') ? 800 : 400 }}>{c}</code>
-                    </span>
-                  ))}
-                </p>
-                <ImportForm action={importAction} templateHref={`/api/modeles/${kind}`}>
-                  <input type="hidden" name="kind" value={kind} />
-                </ImportForm>
-              </div>
-            </section>
-          );
-        })}
+            </div>
+          </section>
 
-        <section className="card">
-          <div className="card-head">
-            <h2 className="section-title">Autres imports</h2>
-          </div>
-          <div className="card-body stack-sm small">
-            {canAccess(ctx.roles, 'planning') && (
-              <p>
-                <strong>Tournées du jour</strong> (fichier du donneur d’ordre) : depuis le <Link href="/planning">planning</Link>, bloc « Ajouter des tournées ».
-              </p>
-            )}
-            {canAccess(ctx.roles, 'paie') && (
-              <p>
-                <strong>Journal de paie</strong> (brut, net, coût employeur) : depuis la page <Link href="/paie">Paie</Link>.
-              </p>
-            )}
-            <p className="muted">Chaque import est tracé dans le journal d’audit, avec son auteur et son résultat.</p>
-          </div>
-        </section>
-      </div>
+          <section className="card">
+            <div className="card-head">
+              <h2>2. Vérifier puis importer</h2>
+            </div>
+            <div className="card-body stack">
+              <ImportForm key={kind} action={importAction}>
+                <input type="hidden" name="kind" value={kind} />
+              </ImportForm>
+              <div className="small muted stack-sm">
+                <p>La vérification signale, ligne par ligne : les colonnes obligatoires absentes, les colonnes inconnues (ignorées), les valeurs au mauvais format, les doublons et les champs obligatoires vides.</p>
+                <p>Ordre conseillé pour démarrer : personnel, véhicules, planning, puis absences et documents.</p>
+                {canAccess(ctx.roles, 'paie') && (
+                  <p>
+                    Le journal de paie (brut, net, coût employeur) s’importe depuis la page <Link href="/paie">Paie</Link>.
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }

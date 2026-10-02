@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ExpiryBadge } from '@/components/badges';
 import { DocumentsPanel } from '@/components/DocumentsPanel';
+import { FilterTabs } from '@/components/FilterTabs';
 import { PageHeader } from '@/components/PageHeader';
 import { requireModule } from '@/lib/auth';
 import { getDb } from '@/lib/db';
@@ -37,15 +38,12 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
     <>
       <PageHeader
         title="Documents et échéances"
-        subtitle={`${expired} échéance${expired > 1 ? 's' : ''} dépassée${expired > 1 ? 's' : ''}. Alertes à 90, 30, 15 et 7 jours. Le contrôle technique est calculé à partir de la première immatriculation (4 ans, puis tous les 2 ans).`}
+        subtitle={`${expired ? `${expired} échéance${expired > 1 ? 's' : ''} dépassée${expired > 1 ? 's' : ''}. ` : ''}Vous êtes prévenu 90, 30, 15 et 7 jours avant chaque échéance. Pour modifier un document, ouvrez la fiche du véhicule ou du salarié concerné.`}
       />
-      <nav className="btn-row" style={{ marginBottom: 12 }} aria-label="Filtres">
-        {FILTERS.map((f) => (
-          <Link key={f.value} href={`/documents?filtre=${f.value}`} className={`btn btn-sm ${f.value === filter ? 'btn-yellow' : 'btn-ghost'}`} aria-current={f.value === filter ? 'page' : undefined}>
-            {f.label}
-          </Link>
-        ))}
-      </nav>
+      <FilterTabs
+        label="Filtrer les échéances"
+        items={FILTERS.map((f) => ({ href: `/documents?filtre=${f.value}`, label: f.label, active: f.value === filter }))}
+      />
       <section className="card table-wrap" style={{ marginBottom: 16 }}>
         <table className="table">
           <thead>
@@ -77,7 +75,7 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
             ))}
           </tbody>
         </table>
-        {rows.length === 0 && <p className="empty">Rien dans cette catégorie.</p>}
+        {rows.length === 0 && <p className="empty">Rien à signaler dans cette catégorie.</p>}
       </section>
       <DocumentsPanel
         entity="organization"

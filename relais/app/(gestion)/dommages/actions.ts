@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireAction } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { attachToDamage, setDamageCosts } from '@/lib/data/cases';
+import { addDamagePhotos, attachToDamage, removeDamagePhoto, setDamageCosts, updateDamage } from '@/lib/data/cases';
 import { saveUpload, saveUploads } from '@/lib/data/files';
 import { changeDamageStatus, createDamage } from '@/lib/data/operations';
 import { parisLocalToIso } from '@/lib/domain/dates';
@@ -70,6 +70,57 @@ export async function setDamageCostsAction(_: FormState, formData: FormData): Pr
     if (error) return { error };
     revalidatePath('/dommages', 'layout');
     return { ok: 'Coûts enregistrés.' };
+  } catch (error) {
+    return toFormState(error);
+  }
+}
+
+export async function updateDamageAction(_: FormState, formData: FormData): Promise<FormState> {
+  const damageId = Number(formData.get('damageId'));
+  try {
+    const ctx = await requireAction('dommage.modifier');
+    const error = updateDamage(getDb(), ctx, damageId, {
+      vehicleId: id(formData, 'vehicleId'),
+      employeeId: optId(formData, 'employeeId'),
+      type: oneOf(formData, 'type', DAMAGE_TYPES, 'Type'),
+      severity: oneOf(formData, 'severity', SEVERITIES, 'Gravité'),
+      description: text(formData, 'description', 'Description', 2000),
+      occurredAt: parisLocalToIso(date(formData, 'day', 'Date du constat'), time(formData, 'time', 'Heure')),
+      locationText: optText(formData, 'location', 200),
+      zones: parseZones(String(formData.get('zones') ?? '')),
+    });
+    if (error) return { error };
+  } catch (error) {
+    return toFormState(error);
+  }
+  revalidatePath('/', 'layout');
+  redirect(`/dommages/${damageId}?enregistre=1`);
+}
+
+/** Ajoute des photos, ou remplace une photo précise (`replaceId`). */
+export async function addDamagePhotosAction(_: FormState, formData: FormData): Promise<FormState> {
+  try {
+    const ctx = await requireAction('dommage.modifier');
+    const db = getDb();
+    const replaceId = optId(formData, 'replaceId');
+    const files = await saveUploads(db, ctx, formData.getAll('photos').slice(0, replaceId ? 1 : 10));
+    if (files.length === 0) return { error: 'Choisissez une photo (JPEG, PNG ou WebP).' };
+    const error = addDamagePhotos(db, ctx, id(formData, 'damageId'), files, replaceId);
+    if (error) return { error };
+    revalidatePath('/dommages', 'layout');
+    return { ok: replaceId ? 'Photo remplacée.' : files.length > 1 ? `${files.length} photos ajoutées.` : 'Photo ajoutée.' };
+  } catch (error) {
+    return toFormState(error);
+  }
+}
+
+export async function removeDamagePhotoAction(_: FormState, formData: FormData): Promise<FormState> {
+  try {
+    const ctx = await requireAction('dommage.modifier');
+    const error = removeDamagePhoto(getDb(), ctx, id(formData, 'damageId'), id(formData, 'fileId'));
+    if (error) return { error };
+    revalidatePath('/dommages', 'layout');
+    return { ok: 'Photo retirée du dossier.' };
   } catch (error) {
     return toFormState(error);
   }

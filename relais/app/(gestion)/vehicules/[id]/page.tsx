@@ -16,7 +16,7 @@ import { listDocuments } from '@/lib/data/documents';
 import { listEmployees } from '@/lib/data/employees';
 import { listInspections } from '@/lib/data/operations';
 import { listShifts } from '@/lib/data/planning';
-import { assignmentHistory, getVehicle, listImmobilizations } from '@/lib/data/vehicles';
+import { assignmentHistory, getVehicle, listImmobilizations, vehicleHolder } from '@/lib/data/vehicles';
 import { addDays, formatDate, formatDateTime, formatWeekday, parisDate } from '@/lib/domain/dates';
 import { formatKm } from '@/lib/domain/inspection';
 import { DAMAGE_TYPES, DRIVING_POSITIONS, ENERGIES, VEHICLE_TYPES, labelOf } from '@/lib/domain/labels';
@@ -42,6 +42,8 @@ export default async function VehiclePage(props: PageProps<'/vehicules/[id]'>) {
   const pending = inspections.find((i) => i.status === 'en_attente');
   const damages = canAccess(ctx.roles, 'dommages') ? listDamages(db, ctx.orgId, { vehicleId: vehicle.id }) : [];
   const compliance = vehicleCompliance(vehicle, today);
+  const holder = vehicleHolder(db, ctx.orgId, vehicle.id);
+  const params = await props.searchParams;
   const shifts = listShifts(db, ctx.orgId, { from: today, to: addDays(today, 13), vehicleId: vehicle.id });
   const zoneCounts: Record<string, number> = {};
   for (const d of damages) for (const z of parseZones(d.zones)) zoneCounts[z] = (zoneCounts[z] ?? 0) + 1;
@@ -65,7 +67,7 @@ export default async function VehiclePage(props: PageProps<'/vehicules/[id]'>) {
         actions={
           canEdit && (
             <Link href={`/vehicules/${vehicle.id}/modifier`} className="btn btn-ghost">
-              Modifier la fiche
+              Modifier
             </Link>
           )
         }
@@ -103,6 +105,11 @@ export default async function VehiclePage(props: PageProps<'/vehicules/[id]'>) {
         </section>
       )}
 
+      {params.enregistre === '1' && (
+        <p className="alert alert-ok" role="status" style={{ marginBottom: 16 }}>
+          Modifications enregistrées.
+        </p>
+      )}
       {compliance.blocking.length > 0 && (
         <p className="alert alert-error" style={{ marginBottom: 16 }} role="alert">
           {compliance.blocking.join(' et ')} : ce véhicule ne peut plus être planifié ni pris par un chauffeur tant que la fiche n’est pas mise à jour.
@@ -156,8 +163,10 @@ export default async function VehiclePage(props: PageProps<'/vehicules/[id]'>) {
           </div>
           <div className="card-body">
             <dl className="kv">
-              <dt>Chauffeur actuel</dt>
-              <dd>{current ? `${current.employee_name} depuis le ${formatDateTime(current.started_at)}` : 'Aucun'}</dd>
+              <dt>Attribué à</dt>
+              <dd>{holder ? <Link href={`/personnel/${holder.id}`}>{holder.name}</Link> : 'Personne (véhicule partagé)'}</dd>
+              <dt>En tournée avec</dt>
+              <dd>{current ? `${current.employee_name} depuis le ${formatDateTime(current.started_at)}` : 'Personne, il est au dépôt'}</dd>
               <dt>Kilométrage</dt>
               <dd className="mono">
                 {formatKm(vehicle.current_km)} <span className="muted small">(entrée : {formatKm(vehicle.initial_km)})</span>

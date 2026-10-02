@@ -9,21 +9,21 @@ export function ExpiryBadge({ status }: { status: ExpiryStatus }) {
       : status.level === 'j7' || status.level === 'j15'
         ? 'badge-yellow'
         : status.level === 'j30'
-          ? 'badge-black'
+          ? ''
           : status.level === 'sans_date'
             ? 'badge-soft'
-            : '';
+            : 'badge-ok';
   return <span className={`badge ${tone}`}>{expiryLabel(status)}</span>;
 }
 
 export function VehicleStatusBadge({ status }: { status: string }) {
   const tone =
-    status === 'disponible' ? '' : status === 'en_tournee' ? 'badge-black' : status === 'bloque' ? 'badge-red' : status === 'immobilise' ? 'badge-yellow' : 'badge-soft';
+    status === 'disponible' ? 'badge-ok' : status === 'en_tournee' ? 'badge-black' : status === 'bloque' ? 'badge-red' : status === 'immobilise' ? 'badge-yellow' : 'badge-soft';
   return <span className={`badge ${tone}`}>{labelOf(VEHICLE_STATUSES, status)}</span>;
 }
 
 export function DamageStatusBadge({ status }: { status: string }) {
-  const tone = status === 'nouveau' ? 'badge-yellow' : status === 'cloture' ? 'badge-soft' : 'badge-black';
+  const tone = status === 'nouveau' ? 'badge-yellow' : status === 'cloture' ? 'badge-soft' : status === 'repare' ? 'badge-ok' : '';
   return <span className={`badge ${tone}`}>{labelOf(DAMAGE_STATUSES, status)}</span>;
 }
 

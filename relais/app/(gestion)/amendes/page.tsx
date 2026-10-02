@@ -27,7 +27,7 @@ export default async function FinesPage() {
     <>
       <PageHeader
         title="Amendes et désignations"
-        subtitle={`Une société doit désigner le conducteur dans les ${DESIGNATION_DELAY_DAYS} jours suivant l’envoi de l’avis. À défaut, une nouvelle contravention est adressée à la société, avec une amende quintuplée pour une personne morale.`}
+        subtitle={`Vous avez ${DESIGNATION_DELAY_DAYS} jours après l’envoi de l’avis pour désigner le conducteur. Passé ce délai, la société reçoit une nouvelle amende, bien plus lourde.`}
         actions={
           <>
             <ExportLink type="amendes" />

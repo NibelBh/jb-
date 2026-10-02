@@ -38,6 +38,7 @@ export function expiryLabel(status: ExpiryStatus): string {
     return `Expiré depuis ${n} jour${n > 1 ? 's' : ''}`;
   }
   if (status.daysLeft === 0) return 'Expire aujourd’hui';
+  if (status.level === 'ok') return 'À jour';
   return `Expire dans ${status.daysLeft} jour${status.daysLeft > 1 ? 's' : ''}`;
 }
 

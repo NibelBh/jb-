@@ -85,14 +85,40 @@ export function matchOption(options: readonly Option[], raw: string, synonyms: R
   return synonyms[key] ?? null;
 }
 
+/**
+ * Clé d'un en-tête de colonne : sans accents, sans majuscules, sans astérisque
+ * et sans la précision de format entre parenthèses (« date (JJ/MM/AAAA) » donne « date »).
+ */
+export function headerKey(value: string): string {
+  return normalizeHeader(value.replace(/\([^)]*\)/g, ' '));
+}
+
 /** Associe chaque champ attendu à la colonne du fichier, à partir de plusieurs noms possibles. */
 export function mapColumns<F extends string>(header: string[], aliases: Record<F, string[]>): Record<F, number> {
-  const normalized = header.map(normalizeHeader);
+  const normalized = header.map(headerKey);
   const result = {} as Record<F, number>;
   for (const field of Object.keys(aliases) as F[]) {
     result[field] = normalized.findIndex((h) => aliases[field].includes(h));
   }
   return result;
+}
+
+/**
+ * Contrôle de l'en-tête avant la lecture des lignes : colonnes obligatoires absentes,
+ * colonnes inconnues (ignorées) et colonnes présentes deux fois.
+ */
+export function checkHeader<F extends string>(
+  header: string[],
+  aliases: Record<F, string[]>,
+  required: { field: F; label: string }[],
+): { missing: string[]; unknown: string[]; repeated: string[] } {
+  const keys = header.map(headerKey);
+  const known = new Set(Object.values<string[]>(aliases).flat());
+  const col = mapColumns(header, aliases);
+  const missing = required.filter((r) => col[r.field] < 0).map((r) => r.label);
+  const unknown = header.filter((h, i) => h.trim() && !known.has(keys[i])).map((h) => h.trim());
+  const repeated = [...new Set(keys.filter((k, i) => k && known.has(k) && keys.indexOf(k) !== i))];
+  return { missing, unknown, repeated };
 }
 
 export function cell(row: string[], index: number): string {
@@ -106,15 +132,18 @@ export type ImportReport = {
   updated: number;
   skipped: number;
   errors: string[];
+  /** Remarques qui n'empêchent pas l'import (colonne inconnue ignorée, ligne d'exemple, doublon déjà enregistré). */
+  warnings: string[];
 };
 
 export function emptyReport(committed: boolean): ImportReport {
-  return { committed, rows: 0, created: 0, updated: 0, skipped: 0, errors: [] };
+  return { committed, rows: 0, created: 0, updated: 0, skipped: 0, errors: [], warnings: [] };
 }
 
 export function reportSummary(r: ImportReport): string {
   const parts = [`${r.rows} ligne${r.rows > 1 ? 's' : ''} lue${r.rows > 1 ? 's' : ''}`, `${r.created} création${r.created > 1 ? 's' : ''}`, `${r.updated} mise${r.updated > 1 ? 's' : ''} à jour`];
   if (r.skipped) parts.push(`${r.skipped} ignorée${r.skipped > 1 ? 's' : ''}`);
-  parts.push(`${r.errors.length} anomalie${r.errors.length > 1 ? 's' : ''}`);
-  return r.committed ? `Import terminé : ${parts.join(', ')}.` : `Vérification : ${parts.join(', ')}. Rien n’a encore été enregistré.`;
+  parts.push(`${r.errors.length} ligne${r.errors.length > 1 ? 's' : ''} refusée${r.errors.length > 1 ? 's' : ''}`);
+  if (r.committed) return `Import terminé : ${parts.join(', ')}.`;
+  return `Vérification terminée : ${parts.join(', ')}. Rien n’est encore enregistré${r.created + r.updated > 0 ? ' : cliquez sur « Importer » pour valider.' : '.'}`;
 }

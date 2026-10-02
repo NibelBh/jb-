@@ -21,6 +21,7 @@ export const metadata: Metadata = { title: 'Avis de contravention' };
 
 export default async function FinePage(props: PageProps<'/amendes/[id]'>) {
   const ctx = await requireModule('amendes');
+  const params = await props.searchParams;
   const fineId = Number((await props.params).id);
   const db = getDb();
   const fine = Number.isInteger(fineId) ? getFine(db, ctx.orgId, fineId) : undefined;
@@ -50,7 +51,19 @@ export default async function FinePage(props: PageProps<'/amendes/[id]'>) {
           </>
         }
         back={{ href: '/amendes', label: 'Amendes' }}
+        actions={
+          editable && (
+            <Link href={`/amendes/${fine.id}/modifier`} className="btn btn-ghost">
+              Modifier l’avis
+            </Link>
+          )
+        }
       />
+      {params.enregistre === '1' && (
+        <p className="alert alert-ok" role="status" style={{ marginBottom: 16 }}>
+          Modifications enregistrées.
+        </p>
+      )}
 
       <div className="grid-2" style={{ marginBottom: 16 }}>
         <section className="card">

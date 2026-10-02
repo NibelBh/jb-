@@ -80,7 +80,7 @@ export default async function SettingsPage() {
     <>
       <PageHeader
         title="Membres et accès"
-        subtitle="Trois niveaux : Administrateur, Responsable / manager, Salarié. Un membre désactivé ne peut plus se connecter mais reste dans l’historique ; un membre supprimé disparaît de la liste, son nom reste dans le journal."
+        subtitle="Qui peut se connecter, et à quoi. Désactivez un compte pour couper l’accès temporairement ; supprimez-le s’il n’a plus lieu d’être (son nom reste dans le journal)."
       />
 
       <section className="card" style={{ marginBottom: 16 }}>

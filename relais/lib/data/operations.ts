@@ -414,6 +414,7 @@ export function setVehicleStatus(db: Db, ctx: Actor, vehicleId: number, status: 
 
   transaction(db, () => {
     run(db, `UPDATE vehicles SET status = ? WHERE id = ? AND org_id = ?`, status, vehicle.id, ctx.orgId);
+    if (status === 'sorti') run(db, `UPDATE employees SET vehicle_id = NULL WHERE org_id = ? AND vehicle_id = ?`, ctx.orgId, vehicle.id);
     if (status === 'immobilise') {
       run(db, `INSERT INTO immobilizations (org_id, vehicle_id, started_on, reason) VALUES (?, ?, ?, ?)`, ctx.orgId, vehicle.id, today, reason.trim());
     }

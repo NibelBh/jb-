@@ -9,7 +9,7 @@ import { listPayrollExports, listPayrollItems, payrollCodes, payrollMonth } from
 import { formatDate, formatDateTime, parisDate } from '@/lib/domain/dates';
 import { ABSENCE_VARIABLES, MANUAL_VARIABLES, PAYROLL_VARIABLES, frNumber, isPayrollVariable, isPeriod, periodLabel, shiftPeriod, sumCosts, variableInfo } from '@/lib/domain/payroll';
 import { can } from '@/lib/domain/roles';
-import { addPayrollItemAction, deletePayrollItemAction, importPayrollJournalAction, savePayrollCodesAction } from './actions';
+import { addPayrollItemAction, deletePayrollItemAction, updatePayrollItemAction, importPayrollJournalAction, savePayrollCodesAction } from './actions';
 import styles from './page.module.css';
 
 export const metadata: Metadata = { title: 'Paie' };
@@ -51,7 +51,7 @@ export default async function PayrollPage(props: PageProps<'/paie'>) {
     <>
       <PageHeader
         title={`Paie · ${periodLabel(period)}`}
-        subtitle="Relais ne calcule pas les salaires. Il prépare les éléments variables du mois (jours travaillés, tournées, heures, absences datées, retards, primes) dans un fichier que votre logiciel de paie ou votre cabinet importe, puis récupère le journal de paie pour suivre le coût salarial par tournée."
+        subtitle="Les éléments variables du mois, prêts à transmettre à votre logiciel de paie ou à votre cabinet comptable. Relais ne calcule pas les salaires."
         actions={
           <div className="btn-row">
             <Link className="btn btn-ghost btn-sm" href={`/paie?mois=${shiftPeriod(period, -1)}`}>
@@ -236,9 +236,17 @@ export default async function PayrollPage(props: PageProps<'/paie'>) {
                             {i.note ? <span className="muted"> ({i.note})</span> : null}
                           </span>
                           {editable && (
-                            <ActionForm action={deletePayrollItemAction} submitLabel="×" submitClassName={styles.remove} className={styles.inline} confirmMessage="Retirer cet élément ?">
-                              <input type="hidden" name="itemId" value={i.id} />
-                            </ActionForm>
+                            <details className="disclosure small">
+                              <summary>Modifier</summary>
+                              <ActionForm action={updatePayrollItemAction} submitLabel="Enregistrer" submitClassName="btn btn-sm">
+                                <input type="hidden" name="itemId" value={i.id} />
+                                <input name="value" className="input" inputMode="decimal" defaultValue={frNumber(i.value)} aria-label="Valeur" required />
+                                <input name="note" className="input" defaultValue={i.note ?? ''} placeholder="Commentaire" aria-label="Commentaire" />
+                              </ActionForm>
+                              <ActionForm action={deletePayrollItemAction} submitLabel="Retirer" submitClassName="btn btn-ghost btn-sm" className="btn-row" confirmMessage="Retirer cet élément ?">
+                                <input type="hidden" name="itemId" value={i.id} />
+                              </ActionForm>
+                            </details>
                           )}
                         </div>
                       ))}

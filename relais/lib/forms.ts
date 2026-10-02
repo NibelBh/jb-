@@ -10,6 +10,8 @@ export type FormState =
       needsConfirmation?: boolean;
       /** Lignes de détail (anomalies d'un import, par exemple). */
       details?: string[];
+      /** Remarques qui n'empêchent pas l'enregistrement. */
+      warnings?: string[];
       /** Vrai après une vérification réussie d'import : le bouton « Importer » est mis en avant. */
       verified?: boolean;
     }
@@ -125,8 +127,9 @@ const MAX_DETAILS = 50;
 /** Transforme un rapport d'import en état de formulaire (succès, anomalies, bouton « Importer » mis en avant). */
 export function reportState(report: ImportReport, summary: string): FormState {
   const details = report.errors.slice(0, MAX_DETAILS);
-  if (report.errors.length > MAX_DETAILS) details.push(`… et ${report.errors.length - MAX_DETAILS} autres anomalies.`);
+  if (report.errors.length > MAX_DETAILS) details.push(`Et ${report.errors.length - MAX_DETAILS} autres lignes refusées.`);
+  const warnings = report.warnings.slice(0, MAX_DETAILS);
   const nothingDone = report.created + report.updated + report.skipped === 0;
-  if (nothingDone && report.errors.length > 0) return { error: summary, details };
-  return { ok: summary, details, verified: !report.committed };
+  if (nothingDone && report.errors.length > 0) return { error: summary, details, warnings };
+  return { ok: summary, details, warnings, verified: !report.committed };
 }

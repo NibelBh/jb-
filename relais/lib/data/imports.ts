@@ -8,6 +8,7 @@ import { DOCUMENT_TYPES, type DocumentEntity } from '../domain/documents';
 import {
   type ImportReport,
   cell,
+  checkHeader,
   emptyReport,
   mapColumns,
   matchOption,
@@ -18,50 +19,217 @@ import {
 import { ABSENCE_TYPES, CONTRACT_TYPES, EMPLOYEE_STATUSES, ENERGIES, POSITIONS, VEHICLE_TYPES } from '../domain/labels';
 import type { Action } from '../domain/roles';
 import { logAudit } from './audit';
-import { type EmployeeRow, listEmployees } from './employees';
+import { type EmployeeRow, getEmployee, listEmployees } from './employees';
 import { addAbsence, createShifts, listShifts, updateShift } from './planning';
 import { type EmployeeInput, type VehicleInput, addDocument, createEmployee, createVehicle, normalizePlate, updateEmployee, updateVehicle } from './records';
 import { type VehicleRow, listVehicles } from './vehicles';
 
 type Actor = Pick<Ctx, 'orgId' | 'userId' | 'name' | 'origin'>;
 
+const VEHICLE_ALIASES = {
+  plate: ['immatriculation', 'immat', 'plaque', 'plate'],
+  vin: ['vin', 'numero_de_serie', 'n_serie'],
+  brand: ['marque'],
+  model: ['modele'],
+  year: ['annee', 'annee_modele', 'millesime'],
+  type: ['type', 'type_vehicule', 'categorie'],
+  energy: ['energie', 'carburant', 'motorisation'],
+  firstReg: ['premiere_immatriculation', 'date_premiere_immatriculation', 'date_de_premiere_immatriculation', 'mise_en_circulation', 'date_mise_en_circulation'],
+  km: ['kilometrage', 'km', 'compteur', 'kilometrage_actuel'],
+  owner: ['proprietaire', 'loueur', 'proprietaire_ou_loueur'],
+  insurer: ['assureur', 'compagnie_assurance', 'assurance'],
+  policy: ['contrat_assurance', 'police', 'numero_police', 'n_contrat', 'numero_contrat'],
+  insuranceStart: ['debut_assurance', 'date_debut_assurance', 'assurance_du'],
+  insuranceEnd: ['fin_assurance', 'echeance_assurance', 'date_fin_assurance', 'expiration_assurance', 'assurance_au'],
+  ctLast: ['dernier_controle_technique', 'dernier_ct', 'date_controle_technique', 'date_ct'],
+  ctDue: ['echeance_controle_technique', 'echeance_ct', 'prochain_ct', 'prochain_controle_technique'],
+  notes: ['notes', 'commentaire', 'remarques'],
+};
+
+const EMPLOYEE_ALIASES = {
+  payrollId: ['matricule', 'matricule_paie', 'id_paie', 'numero_salarie'],
+  lastName: ['nom', 'nom_de_famille'],
+  firstName: ['prenom'],
+  birthDate: ['date_naissance', 'date_de_naissance', 'ne_le', 'naissance'],
+  birthPlace: ['lieu_naissance', 'lieu_de_naissance'],
+  nationality: ['nationalite'],
+  address: ['adresse', 'adresse_postale', 'rue'],
+  postalCode: ['code_postal', 'cp'],
+  city: ['ville', 'commune'],
+  emergencyName: ['contact_urgence', 'personne_a_prevenir', 'contact_d_urgence'],
+  emergencyPhone: ['telephone_urgence', 'tel_urgence', 'telephone_d_urgence'],
+  licenceIssued: ['date_obtention_permis', 'obtention_permis', 'permis_obtenu_le', 'date_permis'],
+  phone: ['telephone', 'tel', 'portable', 'mobile'],
+  email: ['email', 'e_mail', 'mail', 'courriel'],
+  position: ['poste', 'fonction', 'emploi'],
+  contract: ['contrat', 'type_contrat', 'type_de_contrat'],
+  status: ['statut', 'etat'],
+  hiredOn: ['date_embauche', 'embauche', 'date_d_embauche', 'date_entree', 'entree'],
+  leftOn: ['date_sortie', 'sortie', 'date_de_sortie'],
+  licenceNumber: ['numero_permis', 'permis', 'n_permis', 'numero_de_permis'],
+  categories: ['categories_permis', 'categories', 'categorie_permis'],
+  licenceExpires: ['fin_validite_permis', 'expiration_permis', 'validite_permis', 'permis_valable_jusqu_au'],
+  notes: ['notes', 'commentaire', 'remarques'],
+};
+
+const ABSENCE_ALIASES = {
+  payrollId: ['matricule', 'matricule_paie', 'id_paie'],
+  lastName: ['nom'],
+  firstName: ['prenom'],
+  type: ['type', 'type_absence', 'motif', 'nature'],
+  start: ['du', 'debut', 'date_debut', 'date_de_debut', 'de'],
+  end: ['au', 'fin', 'date_fin', 'date_de_fin', 'a', 'jusqu_au'],
+  note: ['commentaire', 'note', 'notes', 'remarque'],
+};
+
+const PLANNING_ALIASES = {
+  day: ['date', 'jour'],
+  payrollId: ['matricule', 'matricule_paie'],
+  lastName: ['nom'],
+  firstName: ['prenom'],
+  driver: ['salarie', 'chauffeur', 'livreur', 'driver'],
+  start: ['debut', 'heure_debut', 'depart', 'heure_depart', 'prise_de_poste'],
+  end: ['fin', 'heure_fin', 'retour', 'fin_de_poste'],
+  route: ['tournee', 'code_tournee', 'route', 'code'],
+  plate: ['vehicule', 'immatriculation', 'plaque', 'van'],
+  notes: ['commentaire', 'notes', 'remarques'],
+};
+
+const DOCUMENT_ALIASES = {
+  plate: ['immatriculation', 'immat', 'plaque', 'vehicule'],
+  payrollId: ['matricule', 'matricule_paie'],
+  lastName: ['nom'],
+  firstName: ['prenom'],
+  type: ['type', 'document', 'type_document', 'type_de_document'],
+  reference: ['reference', 'numero', 'ref'],
+  issuedOn: ['delivre_le', 'date_delivrance', 'date_de_delivrance', 'emis_le', 'debut'],
+  expiresOn: ['expire_le', 'date_expiration', 'date_d_expiration', 'expiration', 'fin_validite', 'valable_jusqu_au', 'echeance'],
+};
+
+type Column<F extends string> = {
+  field: F;
+  /** Nom de colonne du modèle (reconnu à l'import, avec ou sans accents ni majuscules). */
+  header: string;
+  required?: boolean;
+  /** Format attendu, rappelé entre parenthèses dans le modèle et expliqué sur la page. */
+  format?: string;
+  /** Valeurs acceptées ou précision affichée sur la page d'import. */
+  hint?: string;
+  example: string;
+};
+
+type Kind<F extends string> = { label: string; action: Action; help: string; aliases: Record<F, string[]>; columns: Column<F>[] };
+
+function kind<F extends string>(k: Kind<F>): Kind<F> {
+  return k;
+}
+
+const DATE = 'JJ/MM/AAAA';
+
 export const IMPORT_KINDS = {
-  vehicules: {
+  personnel: kind({
+    label: 'Personnel',
+    action: 'personnel.modifier',
+    help: 'Crée les fiches salariés ou complète celles qui existent déjà (reconnues par le matricule de paie, sinon par le nom et le prénom). Une cellule vide ne modifie rien.',
+    aliases: EMPLOYEE_ALIASES,
+    columns: [
+      { field: 'payrollId', header: 'matricule', hint: 'Le matricule de votre logiciel de paie', example: 'M012' },
+      { field: 'lastName', header: 'nom', required: true, example: 'DUPONT' },
+      { field: 'firstName', header: 'prenom', required: true, example: 'Jean' },
+      { field: 'birthDate', header: 'date_naissance', format: DATE, example: '12/05/1990' },
+      { field: 'phone', header: 'telephone', example: '06 12 34 56 78' },
+      { field: 'email', header: 'email', example: 'jean.dupont@exemple.fr' },
+      { field: 'address', header: 'adresse', example: '4 rue des Lilas' },
+      { field: 'postalCode', header: 'code_postal', example: '93200' },
+      { field: 'city', header: 'ville', example: 'Saint-Denis' },
+      { field: 'emergencyName', header: 'contact_urgence', example: 'Marie Dupont' },
+      { field: 'emergencyPhone', header: 'telephone_urgence', example: '06 98 76 54 32' },
+      { field: 'position', header: 'poste', hint: POSITIONS.map((p) => p.label).join(', '), example: 'Chauffeur-livreur' },
+      { field: 'contract', header: 'contrat', hint: CONTRACT_TYPES.map((p) => p.label).join(', '), example: 'CDI' },
+      { field: 'status', header: 'statut', hint: EMPLOYEE_STATUSES.map((p) => p.label).join(', '), example: 'Actif' },
+      { field: 'hiredOn', header: 'date_embauche', format: DATE, example: '01/09/2026' },
+      { field: 'leftOn', header: 'date_sortie', format: DATE, example: '' },
+      { field: 'licenceNumber', header: 'numero_permis', example: '123456789012' },
+      { field: 'categories', header: 'categories_permis', hint: 'Séparées par une virgule : B, C1, C…', example: 'B' },
+      { field: 'licenceIssued', header: 'date_obtention_permis', format: DATE, example: '20/06/2010' },
+      { field: 'licenceExpires', header: 'fin_validite_permis', format: DATE, example: '15/03/2034' },
+      { field: 'notes', header: 'notes', example: '' },
+    ],
+  }),
+  vehicules: kind({
     label: 'Véhicules',
     action: 'vehicule.modifier',
     help: 'Crée les véhicules absents et complète ceux qui existent déjà (reconnus par l’immatriculation). Une cellule vide ne modifie rien.',
-    columns: ['immatriculation*', 'vin', 'marque', 'modele', 'annee', 'type', 'energie', 'premiere_immatriculation', 'kilometrage', 'proprietaire', 'assureur', 'contrat_assurance', 'debut_assurance', 'fin_assurance', 'dernier_controle_technique', 'echeance_controle_technique', 'notes'],
-    example: ['AB-123-CD', 'VF1MA000000000000', 'Renault', 'Master', '2023', 'Fourgon', 'Diesel', '15/03/2023', '45200', 'Loueur longue durée', 'AXA Flotte', 'POL-2026-001', '01/01/2026', '31/12/2026', '', '', ''],
-  },
-  personnel: {
-    label: 'Personnel',
-    action: 'personnel.modifier',
-    help: 'Crée ou complète les fiches salariés, reconnues par le matricule de paie, sinon par le nom et le prénom.',
-    columns: ['matricule', 'nom*', 'prenom*', 'date_naissance', 'telephone', 'email', 'adresse', 'code_postal', 'ville', 'contact_urgence', 'telephone_urgence', 'poste', 'contrat', 'statut', 'date_embauche', 'date_sortie', 'numero_permis', 'categories_permis', 'date_obtention_permis', 'fin_validite_permis', 'notes'],
-    example: ['M012', 'DUPONT', 'Jean', '12/05/1990', '06 12 34 56 78', 'jean.dupont@exemple.fr', '4 rue des Lilas', '93200', 'Saint-Denis', 'Marie Dupont', '06 98 76 54 32', 'Chauffeur-livreur', 'CDI', 'Actif', '01/09/2026', '', '123456789012', 'B', '20/06/2010', '15/03/2034', ''],
-  },
-  absences: {
+    aliases: VEHICLE_ALIASES,
+    columns: [
+      { field: 'plate', header: 'immatriculation', required: true, hint: 'Avec ou sans tirets', example: 'AB-123-CD' },
+      { field: 'vin', header: 'vin', example: 'VF1MA000000000000' },
+      { field: 'brand', header: 'marque', example: 'Renault' },
+      { field: 'model', header: 'modele', example: 'Master' },
+      { field: 'year', header: 'annee', format: 'AAAA', example: '2023' },
+      { field: 'type', header: 'type', hint: VEHICLE_TYPES.map((t) => t.label).join(', '), example: 'Fourgon' },
+      { field: 'energy', header: 'energie', hint: ENERGIES.map((t) => t.label).join(', '), example: 'Diesel' },
+      { field: 'firstReg', header: 'premiere_immatriculation', format: DATE, example: '15/03/2023' },
+      { field: 'km', header: 'kilometrage', format: 'nombre entier', example: '45200' },
+      { field: 'owner', header: 'proprietaire', example: 'Loueur longue durée' },
+      { field: 'insurer', header: 'assureur', example: 'AXA Flotte' },
+      { field: 'policy', header: 'contrat_assurance', example: 'POL-2026-001' },
+      { field: 'insuranceStart', header: 'debut_assurance', format: DATE, example: '01/01/2026' },
+      { field: 'insuranceEnd', header: 'fin_assurance', format: DATE, example: '31/12/2026' },
+      { field: 'ctLast', header: 'dernier_controle_technique', format: DATE, example: '' },
+      { field: 'ctDue', header: 'echeance_controle_technique', format: DATE, example: '' },
+      { field: 'notes', header: 'notes', example: '' },
+    ],
+  }),
+  planning: kind({
+    label: 'Planning (horaires et tournées)',
+    action: 'planning.modifier',
+    help: 'Crée une planification par ligne. Une tournée déjà planifiée le même jour est mise à jour (salarié, horaires ou véhicule). Mêmes contrôles qu’à la saisie : disponibilité, chevauchements, assurance et contrôle technique.',
+    aliases: PLANNING_ALIASES,
+    columns: [
+      { field: 'day', header: 'date', required: true, format: DATE, example: '05/10/2026' },
+      { field: 'payrollId', header: 'matricule', hint: 'Ou le nom et le prénom', example: 'M012' },
+      { field: 'lastName', header: 'nom', example: 'DUPONT' },
+      { field: 'firstName', header: 'prenom', example: 'Jean' },
+      { field: 'start', header: 'debut', required: true, format: 'HH:MM', example: '07:30' },
+      { field: 'end', header: 'fin', required: true, format: 'HH:MM', example: '16:00' },
+      { field: 'route', header: 'tournee', hint: 'Vide pour une journée sans tournée', example: 'A01' },
+      { field: 'plate', header: 'vehicule', hint: 'Immatriculation ; vide = véhicule attribué au salarié', example: 'AB-123-CD' },
+      { field: 'notes', header: 'commentaire', example: '' },
+    ],
+  }),
+  absences: kind({
     label: 'Absences et congés',
     action: 'absence.modifier',
     help: 'Ajoute des absences (congés, arrêts, formations…). Une absence identique déjà enregistrée est ignorée. Aucun motif médical.',
-    columns: ['matricule', 'nom', 'prenom', 'type*', 'du*', 'au', 'commentaire'],
-    example: ['M012', 'DUPONT', 'Jean', 'Congé', '12/10/2026', '16/10/2026', ''],
-  },
-  planning: {
-    label: 'Planning (horaires et tournées)',
-    action: 'planning.modifier',
-    help: 'Crée les planifications : un salarié, un jour, une heure de début et de fin, une tournée et un véhicule facultatifs. Une tournée déjà planifiée le même jour est mise à jour (changement de salarié, d’horaires ou de véhicule). Mêmes contrôles que la saisie : disponibilité, chevauchements, assurance et contrôle technique.',
-    columns: ['date*', 'matricule', 'nom', 'prenom', 'debut*', 'fin*', 'tournee', 'vehicule', 'commentaire'],
-    example: ['05/10/2026', 'M012', 'DUPONT', 'Jean', '07:30', '16:00', 'A01', 'AB-123-CD', ''],
-  },
-  documents: {
+    aliases: ABSENCE_ALIASES,
+    columns: [
+      { field: 'payrollId', header: 'matricule', hint: 'Ou le nom et le prénom', example: 'M012' },
+      { field: 'lastName', header: 'nom', example: 'DUPONT' },
+      { field: 'firstName', header: 'prenom', example: 'Jean' },
+      { field: 'type', header: 'type', required: true, hint: ABSENCE_TYPES.map((t) => t.label).join(', '), example: 'Congé' },
+      { field: 'start', header: 'du', required: true, format: DATE, example: '12/10/2026' },
+      { field: 'end', header: 'au', format: DATE, hint: 'Vide = un seul jour', example: '16/10/2026' },
+      { field: 'note', header: 'commentaire', example: '' },
+    ],
+  }),
+  documents: kind({
     label: 'Documents et échéances',
     action: 'document.modifier',
     help: 'Enregistre les dates d’expiration (assurances, contrôles techniques, permis, titres de séjour…) pour déclencher les alertes. Renseignez l’immatriculation pour un véhicule, ou le matricule ou le nom pour un salarié.',
-    columns: ['immatriculation', 'matricule', 'nom', 'prenom', 'type*', 'reference', 'delivre_le', 'expire_le'],
-    example: ['AB-123-CD', '', '', '', 'Attestation d’assurance', 'POL-2026-001', '01/01/2026', '31/12/2026'],
-  },
-} as const satisfies Record<string, { label: string; action: Action; help: string; columns: string[]; example: string[] }>;
+    aliases: DOCUMENT_ALIASES,
+    columns: [
+      { field: 'plate', header: 'immatriculation', hint: 'Pour un document de véhicule', example: 'AB-123-CD' },
+      { field: 'payrollId', header: 'matricule', hint: 'Pour un document de salarié', example: '' },
+      { field: 'lastName', header: 'nom', example: '' },
+      { field: 'firstName', header: 'prenom', example: '' },
+      { field: 'type', header: 'type', required: true, hint: 'Attestation d’assurance, Contrôle technique, Permis de conduire, Titre de séjour…', example: 'Attestation d’assurance' },
+      { field: 'reference', header: 'reference', example: 'POL-2026-001' },
+      { field: 'issuedOn', header: 'delivre_le', format: DATE, example: '01/01/2026' },
+      { field: 'expiresOn', header: 'expire_le', format: DATE, example: '31/12/2026' },
+    ],
+  }),
+} as const;
 
 export type ImportKind = keyof typeof IMPORT_KINDS;
 
@@ -124,8 +292,33 @@ export function runImport(db: Db, ctx: Actor, kind: ImportKind, text: string, co
     return { report, summary: reportSummary(report) };
   }
   const header = rows[0];
-  const data = rows.slice(1);
-  report.rows = data.length;
+  const spec = IMPORT_KINDS[kind] as Kind<string>;
+  const check = checkHeader(header, spec.aliases, spec.columns.filter((c) => c.required).map((c) => ({ field: c.field, label: c.header })));
+  if (check.missing.length) {
+    report.errors.push(
+      `Colonne${check.missing.length > 1 ? 's' : ''} obligatoire${check.missing.length > 1 ? 's' : ''} absente${check.missing.length > 1 ? 's' : ''} : ${check.missing.map((m) => `« ${m} »`).join(', ')}. Partez du modèle CSV pour avoir les bonnes colonnes.`,
+    );
+    return { report, summary: reportSummary(report) };
+  }
+  if (check.repeated.length) {
+    report.errors.push(`Colonne${check.repeated.length > 1 ? 's' : ''} en double dans l’en-tête : ${check.repeated.map((m) => `« ${m} »`).join(', ')}. Gardez-en une seule.`);
+    return { report, summary: reportSummary(report) };
+  }
+  for (const u of check.unknown) report.warnings.push(`Colonne « ${u} » non reconnue : elle est ignorée.`);
+  // Les lignes vides et la ligne d'exemple du modèle laissée telle quelle sont ignorées, sans décaler les numéros de ligne.
+  const exampleKey = (cells: string[]) => cells.map((c) => c.trim().toLowerCase()).join('|');
+  const example = exampleKey(spec.columns.map((c) => c.example));
+  const col = mapColumns(header, spec.aliases);
+  const data = rows.slice(1).map((row, i) => {
+    if (row.every((c) => !c.trim())) return null;
+    const ordered = spec.columns.map((c) => cell(row, col[c.field]));
+    if (exampleKey(ordered) === example) {
+      report.warnings.push(`Ligne ${i + 2} : c’est la ligne d’exemple du modèle, elle est ignorée.`);
+      return null;
+    }
+    return row;
+  });
+  report.rows = data.filter(Boolean).length;
 
   const work = () => {
     if (kind === 'vehicules') importVehicles(db, ctx, header, data, report);
@@ -151,37 +344,16 @@ function lineError(report: ImportReport, line: number, message: string) {
 
 // ---------- Véhicules ----------
 
-function importVehicles(db: Db, ctx: Actor, header: string[], data: string[][], report: ImportReport) {
-  const col = mapColumns(header, {
-    plate: ['immatriculation', 'immat', 'plaque', 'plate'],
-    vin: ['vin', 'numero_de_serie', 'n_serie'],
-    brand: ['marque'],
-    model: ['modele'],
-    year: ['annee', 'annee_modele', 'millesime'],
-    type: ['type', 'type_vehicule', 'categorie'],
-    energy: ['energie', 'carburant', 'motorisation'],
-    firstReg: ['premiere_immatriculation', 'date_premiere_immatriculation', 'date_de_premiere_immatriculation', 'mise_en_circulation', 'date_mise_en_circulation'],
-    km: ['kilometrage', 'km', 'compteur', 'kilometrage_actuel'],
-    owner: ['proprietaire', 'loueur', 'proprietaire_ou_loueur'],
-    insurer: ['assureur', 'compagnie_assurance', 'assurance'],
-    policy: ['contrat_assurance', 'police', 'numero_police', 'n_contrat', 'numero_contrat'],
-    insuranceStart: ['debut_assurance', 'date_debut_assurance', 'assurance_du'],
-    insuranceEnd: ['fin_assurance', 'echeance_assurance', 'date_fin_assurance', 'expiration_assurance', 'assurance_au'],
-    ctLast: ['dernier_controle_technique', 'dernier_ct', 'date_controle_technique', 'date_ct'],
-    ctDue: ['echeance_controle_technique', 'echeance_ct', 'prochain_ct', 'prochain_controle_technique'],
-    notes: ['notes', 'commentaire', 'remarques'],
-  });
-  if (col.plate < 0) {
-    report.errors.push('Colonne « immatriculation » introuvable.');
-    return;
-  }
+function importVehicles(db: Db, ctx: Actor, header: string[], data: (string[] | null)[], report: ImportReport) {
+  const col = mapColumns(header, VEHICLE_ALIASES);
   const existing = new Map<string, VehicleRow>(listVehicles(db, ctx.orgId, { includeRetired: true }).map((v) => [v.plate, v]));
   const seen = new Set<string>();
 
   data.forEach((row, index) => {
+    if (!row) return;
     const line = index + 2;
     const rawPlate = cell(row, col.plate);
-    if (!rawPlate) return lineError(report, line, 'immatriculation vide.');
+    if (!rawPlate) return lineError(report, line, 'la colonne « immatriculation » est vide (obligatoire).');
     const plate = normalizePlate(rawPlate);
     if (seen.has(plate)) return lineError(report, line, `${plate} apparaît deux fois dans le fichier.`);
     seen.add(plate);
@@ -283,44 +455,17 @@ export function findEmployee(index: EmployeeIndex, payrollId: string, lastName: 
   return { employee: matches[0] };
 }
 
-function importEmployees(db: Db, ctx: Actor, header: string[], data: string[][], report: ImportReport) {
-  const col = mapColumns(header, {
-    payrollId: ['matricule', 'matricule_paie', 'id_paie', 'numero_salarie'],
-    lastName: ['nom', 'nom_de_famille'],
-    firstName: ['prenom'],
-    birthDate: ['date_naissance', 'date_de_naissance', 'ne_le', 'naissance'],
-    birthPlace: ['lieu_naissance', 'lieu_de_naissance'],
-    nationality: ['nationalite'],
-    address: ['adresse', 'adresse_postale', 'rue'],
-    postalCode: ['code_postal', 'cp'],
-    city: ['ville', 'commune'],
-    emergencyName: ['contact_urgence', 'personne_a_prevenir', 'contact_d_urgence'],
-    emergencyPhone: ['telephone_urgence', 'tel_urgence', 'telephone_d_urgence'],
-    licenceIssued: ['date_obtention_permis', 'obtention_permis', 'permis_obtenu_le', 'date_permis'],
-    phone: ['telephone', 'tel', 'portable', 'mobile'],
-    email: ['email', 'e_mail', 'mail', 'courriel'],
-    position: ['poste', 'fonction', 'emploi'],
-    contract: ['contrat', 'type_contrat', 'type_de_contrat'],
-    status: ['statut', 'etat'],
-    hiredOn: ['date_embauche', 'embauche', 'date_d_embauche', 'date_entree', 'entree'],
-    leftOn: ['date_sortie', 'sortie', 'date_de_sortie'],
-    licenceNumber: ['numero_permis', 'permis', 'n_permis', 'numero_de_permis'],
-    categories: ['categories_permis', 'categories', 'categorie_permis'],
-    licenceExpires: ['fin_validite_permis', 'expiration_permis', 'validite_permis', 'permis_valable_jusqu_au'],
-    notes: ['notes', 'commentaire', 'remarques'],
-  });
-  if (col.lastName < 0 || col.firstName < 0) {
-    report.errors.push('Colonnes « nom » et « prenom » obligatoires.');
-    return;
-  }
+function importEmployees(db: Db, ctx: Actor, header: string[], data: (string[] | null)[], report: ImportReport) {
+  const col = mapColumns(header, EMPLOYEE_ALIASES);
   const index = employeeIndex(db, ctx.orgId);
   const seenPayroll = new Set<string>();
 
   data.forEach((row, i) => {
+    if (!row) return;
     const line = i + 2;
     const lastName = cell(row, col.lastName);
     const firstName = cell(row, col.firstName);
-    if (!lastName || !firstName) return lineError(report, line, 'nom et prénom obligatoires.');
+    if (!lastName || !firstName) return lineError(report, line, 'les colonnes « nom » et « prenom » sont obligatoires.');
     const payrollId = cell(row, col.payrollId);
     if (payrollId) {
       if (seenPayroll.has(payrollId.toUpperCase())) return lineError(report, line, `matricule ${payrollId} présent deux fois dans le fichier.`);
@@ -392,24 +537,14 @@ function importEmployees(db: Db, ctx: Actor, header: string[], data: string[][],
 
 // ---------- Absences ----------
 
-function importAbsences(db: Db, ctx: Actor, header: string[], data: string[][], report: ImportReport) {
-  const col = mapColumns(header, {
-    payrollId: ['matricule', 'matricule_paie', 'id_paie'],
-    lastName: ['nom'],
-    firstName: ['prenom'],
-    type: ['type', 'type_absence', 'motif', 'nature'],
-    start: ['du', 'debut', 'date_debut', 'date_de_debut', 'de'],
-    end: ['au', 'fin', 'date_fin', 'date_de_fin', 'a', 'jusqu_au'],
-    note: ['commentaire', 'note', 'notes', 'remarque'],
-  });
-  if (col.type < 0 || col.start < 0) {
-    report.errors.push('Colonnes « type » et « du » obligatoires.');
-    return;
-  }
+function importAbsences(db: Db, ctx: Actor, header: string[], data: (string[] | null)[], report: ImportReport) {
+  const col = mapColumns(header, ABSENCE_ALIASES);
   const index = employeeIndex(db, ctx.orgId);
   const today = parisDate();
+  const seen = new Map<string, number>();
 
   data.forEach((row, i) => {
+    if (!row) return;
     const line = i + 2;
     const who = findEmployee(index, cell(row, col.payrollId), cell(row, col.lastName), cell(row, col.firstName));
     if (!who.employee) return lineError(report, line, who.error ?? 'salarié introuvable.');
@@ -420,9 +555,12 @@ function importAbsences(db: Db, ctx: Actor, header: string[], data: string[][], 
     const end = parseDateCell(cell(row, col.end));
     if (!start.ok) return lineError(report, line, start.error);
     if (!end.ok) return lineError(report, line, end.error);
-    if (!start.value) return lineError(report, line, 'date de début vide.');
+    if (!start.value) return lineError(report, line, 'la colonne « du » est vide (obligatoire).');
     const endOn = end.value ?? start.value;
-    if (endOn < start.value) return lineError(report, line, 'la fin est avant le début.');
+    if (endOn < start.value) return lineError(report, line, 'la date « au » est avant la date « du ».');
+    const key = `${who.employee.id}|${type}|${start.value}|${endOn}`;
+    if (seen.has(key)) return lineError(report, line, `doublon de la ligne ${seen.get(key)} (même salarié, même type, mêmes dates).`);
+    seen.set(key, line);
 
     const duplicate = all<{ id: number }>(
       db,
@@ -435,6 +573,7 @@ function importAbsences(db: Db, ctx: Actor, header: string[], data: string[][], 
     );
     if (duplicate.length > 0) {
       report.skipped++;
+      report.warnings.push(`Ligne ${line} : cette absence est déjà enregistrée, elle est ignorée.`);
       return;
     }
     const { error } = addAbsence(db, ctx, { employeeId: who.employee.id, type, startOn: start.value, endOn, note: cell(row, col.note) || null }, today);
@@ -445,35 +584,24 @@ function importAbsences(db: Db, ctx: Actor, header: string[], data: string[][], 
 
 // ---------- Planning ----------
 
-function importPlanning(db: Db, ctx: Actor, header: string[], data: string[][], report: ImportReport) {
-  const col = mapColumns(header, {
-    day: ['date', 'jour'],
-    payrollId: ['matricule', 'matricule_paie'],
-    lastName: ['nom'],
-    firstName: ['prenom'],
-    driver: ['salarie', 'chauffeur', 'livreur', 'driver'],
-    start: ['debut', 'heure_debut', 'depart', 'heure_depart', 'prise_de_poste'],
-    end: ['fin', 'heure_fin', 'retour', 'fin_de_poste'],
-    route: ['tournee', 'code_tournee', 'route', 'code'],
-    plate: ['vehicule', 'immatriculation', 'plaque', 'van'],
-    notes: ['commentaire', 'notes', 'remarques'],
-  });
-  if (col.day < 0 || col.start < 0 || col.end < 0) {
-    report.errors.push('Colonnes « date », « debut » et « fin » obligatoires.');
-    return;
-  }
+function importPlanning(db: Db, ctx: Actor, header: string[], data: (string[] | null)[], report: ImportReport) {
+  const col = mapColumns(header, PLANNING_ALIASES);
   const index = employeeIndex(db, ctx.orgId);
   const vehicles = listVehicles(db, ctx.orgId);
   const plateKey = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const seenRoutes = new Map<string, number>();
 
   data.forEach((row, i) => {
+    if (!row) return;
     const line = i + 2;
     const day = parseDateCell(cell(row, col.day));
     if (!day.ok) return lineError(report, line, day.error);
-    if (!day.value) return lineError(report, line, 'date vide.');
+    if (!day.value) return lineError(report, line, 'la colonne « date » est vide (obligatoire).');
+    if (!cell(row, col.start) || !cell(row, col.end)) return lineError(report, line, 'les colonnes « debut » et « fin » sont obligatoires.');
     const start = normalizeTime(cell(row, col.start));
     const end = normalizeTime(cell(row, col.end));
-    if (!start || !end) return lineError(report, line, 'heure de début ou de fin invalide (ex. 07:30).');
+    if (!start) return lineError(report, line, `heure de début « ${cell(row, col.start)} » illisible (attendu HH:MM, par exemple 07:30).`);
+    if (!end) return lineError(report, line, `heure de fin « ${cell(row, col.end)} » illisible (attendu HH:MM, par exemple 16:00).`);
 
     let employeeId: number | null = null;
     const payrollId = cell(row, col.payrollId);
@@ -494,7 +622,14 @@ function importPlanning(db: Db, ctx: Actor, header: string[], data: string[][], 
     const vehicle = plateText ? vehicles.find((v) => plateKey(v.plate) === plateKey(plateText)) : undefined;
     if (plateText && !vehicle) return lineError(report, line, `véhicule ${plateText} introuvable.`);
     const routeName = cell(row, col.route).toUpperCase() || null;
-    const fields = { employeeId, startTime: start, endTime: end, routeName, vehicleId: vehicle?.id ?? null, notes: cell(row, col.notes) || null };
+    if (routeName) {
+      const key = `${day.value}|${routeName}`;
+      if (seenRoutes.has(key)) return lineError(report, line, `la tournée ${routeName} du ${cell(row, col.day)} figure déjà ligne ${seenRoutes.get(key)}.`);
+      seenRoutes.set(key, line);
+    }
+    // Sans véhicule précisé, une tournée part avec le véhicule attribué au salarié.
+    const attributed = !plateText && routeName && employeeId ? (getEmployee(db, ctx.orgId, employeeId)?.vehicle_id ?? null) : null;
+    const fields = { employeeId, startTime: start, endTime: end, routeName, vehicleId: vehicle?.id ?? attributed, notes: cell(row, col.notes) || null };
 
     const existing = routeName ? listShifts(db, ctx.orgId, { from: day.value, to: day.value }).find((s) => s.route_name?.toLowerCase() === routeName.toLowerCase()) : undefined;
     if (existing) {
@@ -511,25 +646,13 @@ function importPlanning(db: Db, ctx: Actor, header: string[], data: string[][], 
 
 // ---------- Documents ----------
 
-function importDocuments(db: Db, ctx: Actor, header: string[], data: string[][], report: ImportReport) {
-  const col = mapColumns(header, {
-    plate: ['immatriculation', 'immat', 'plaque', 'vehicule'],
-    payrollId: ['matricule', 'matricule_paie'],
-    lastName: ['nom'],
-    firstName: ['prenom'],
-    type: ['type', 'document', 'type_document', 'type_de_document'],
-    reference: ['reference', 'numero', 'ref'],
-    issuedOn: ['delivre_le', 'date_delivrance', 'date_de_delivrance', 'emis_le', 'debut'],
-    expiresOn: ['expire_le', 'date_expiration', 'date_d_expiration', 'expiration', 'fin_validite', 'valable_jusqu_au', 'echeance'],
-  });
-  if (col.type < 0) {
-    report.errors.push('Colonne « type » introuvable.');
-    return;
-  }
+function importDocuments(db: Db, ctx: Actor, header: string[], data: (string[] | null)[], report: ImportReport) {
+  const col = mapColumns(header, DOCUMENT_ALIASES);
   const vehicles = new Map(listVehicles(db, ctx.orgId, { includeRetired: true }).map((v) => [v.plate, v]));
   const index = employeeIndex(db, ctx.orgId);
 
   data.forEach((row, i) => {
+    if (!row) return;
     const line = i + 2;
     const plateRaw = cell(row, col.plate);
     let entity: DocumentEntity;
@@ -570,6 +693,7 @@ function importDocuments(db: Db, ctx: Actor, header: string[], data: string[][],
     );
     if (duplicate.length > 0) {
       report.skipped++;
+      report.warnings.push(`Ligne ${line} : ce document est déjà enregistré, il est ignoré.`);
       return;
     }
     const error = addDocument(db, ctx, {
@@ -586,8 +710,21 @@ function importDocuments(db: Db, ctx: Actor, header: string[], data: string[][],
   });
 }
 
-/** Modèle CSV d'un import : en-têtes puis une ligne d'exemple. */
+export type ImportColumn = { header: string; required: boolean; format: string | null; hint: string | null; example: string };
+
+/** Colonnes d'un import, pour la page d'aide. */
+export function importColumns(kind: ImportKind): ImportColumn[] {
+  return (IMPORT_KINDS[kind] as Kind<string>).columns.map((c) => ({ header: c.header, required: !!c.required, format: c.format ?? null, hint: c.hint ?? null, example: c.example }));
+}
+
+/**
+ * Modèle CSV d'un import : en-têtes (astérisque = obligatoire, format entre parenthèses) puis une ligne d'exemple.
+ * Les en-têtes du modèle sont reconnus tels quels à l'import.
+ */
 export function importTemplate(kind: ImportKind): { header: string[]; example: string[] } {
-  const k = IMPORT_KINDS[kind];
-  return { header: k.columns.map((c) => c.replace('*', '')), example: [...k.example] };
+  const columns = importColumns(kind);
+  return {
+    header: columns.map((c) => `${c.header}${c.required ? '*' : ''}${c.format ? ` (${c.format})` : ''}`),
+    example: columns.map((c) => c.example),
+  };
 }

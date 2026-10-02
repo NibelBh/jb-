@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { requireModule } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { dashboard } from '@/lib/data/dashboard';
-import { formatDate, formatLongDate, formatTime, parisDate } from '@/lib/domain/dates';
+import { formatDate, formatTime, parisDate } from '@/lib/domain/dates';
 import { formatKm } from '@/lib/domain/inspection';
 import { formatRange } from '@/lib/domain/shifts';
 import { ABSENCE_TYPES, labelOf } from '@/lib/domain/labels';
@@ -31,7 +31,7 @@ export default async function TodayPage() {
     <>
       <PageHeader
         title="Aujourd’hui"
-        subtitle={formatLongDate(today)}
+        subtitle="Ce qui demande votre attention aujourd’hui. Cliquez sur un chiffre pour voir le détail."
         actions={
           canAccess(ctx.roles, 'planning') && (
             <Link href={`/planning?jour=${today}`} className="btn btn-yellow">
@@ -42,23 +42,50 @@ export default async function TodayPage() {
       />
 
       <section className={styles.kpis} aria-label="Indicateurs du jour">
-        <Kpi label="Tournées couvertes" value={`${d.routes.covered} / ${d.routes.total}`} alert={d.routes.covered < d.routes.total} />
         <Kpi
+          href={`/planning?jour=${today}&filtre=tournees`}
+          show={canAccess(ctx.roles, 'planning')}
+          label="Tournées couvertes"
+          value={`${d.routes.covered} / ${d.routes.total}`}
+          note={d.routes.total - d.routes.covered > 0 ? `${d.routes.total - d.routes.covered} à régler` : 'Toutes en ordre'}
+          alert={d.routes.covered < d.routes.total}
+        />
+        <Kpi
+          href={`/planning?jour=${today}#disponibilites`}
+          show={canAccess(ctx.roles, 'planning')}
           label="Salariés planifiés"
           value={d.people.planned}
-          note={`${d.people.onShift} en service, ${d.people.done} terminé${d.people.done > 1 ? 's' : ''}, ${d.people.absent} absent${d.people.absent > 1 ? 's' : ''}, ${d.people.late} en retard`}
+          note={`${d.people.onShift} en service, ${d.people.done} terminé${d.people.done > 1 ? 's' : ''}, ${d.people.absent} absent${d.people.absent > 1 ? 's' : ''}`}
           alert={d.people.absent > 0}
         />
-        <Kpi label="Véhicules en tournée" value={d.vehicles.en_tournee} note={`${d.vehicles.disponible} disponible${d.vehicles.disponible > 1 ? 's' : ''}`} />
-        <Kpi label="Véhicules bloqués ou immobilisés" value={d.vehicles.bloque + d.vehicles.immobilise} alert={d.vehicles.bloque > 0} />
-        <Kpi label="Amendes à désigner" value={d.fines.length} alert={d.fines.some((f) => f.urgency === 'critique' || f.urgency === 'depasse')} />
-        <Kpi label="Échéances sous 30 jours" value={urgentDeadlines.length} alert={urgentDeadlines.some((x) => x.status.level === 'expire')} />
+        <Kpi
+          href="/vehicules?statut=en_tournee"
+          show={canFleet}
+          label="Véhicules en tournée"
+          value={d.vehicles.en_tournee}
+          note={`${d.vehicles.disponible} disponible${d.vehicles.disponible > 1 ? 's' : ''} au dépôt`}
+        />
+        <Kpi
+          href="/vehicules?statut=indisponibles"
+          show={canFleet}
+          label="Véhicules bloqués ou immobilisés"
+          value={d.vehicles.bloque + d.vehicles.immobilise}
+          alert={d.vehicles.bloque > 0}
+        />
+        <Kpi href="/amendes" show={canFines} label="Amendes à désigner" value={d.fines.length} alert={d.fines.some((f) => f.urgency === 'critique' || f.urgency === 'depasse')} />
+        <Kpi
+          href="/documents?filtre=urgent"
+          show={canAccess(ctx.roles, 'documents')}
+          label="Échéances sous 30 jours"
+          value={urgentDeadlines.length}
+          alert={urgentDeadlines.some((x) => x.status.level === 'expire')}
+        />
       </section>
 
       <div className={styles.grid}>
         <section className="card">
           <div className="card-head">
-            <h2 className="section-title">À traiter ce matin</h2>
+            <h2 className="section-title">À traiter</h2>
           </div>
           <div className="card-body stack-sm">
             {d.blockedInspections.map((i) => (
@@ -70,7 +97,7 @@ export default async function TodayPage() {
                 tone="yellow"
                 href={`/planning/remplacement?creneau=${r.id}`}
                 title={`${r.route_name ? `Tournée ${r.route_name}` : 'Créneau'} ${formatRange(r.start_time, r.end_time)} à couvrir`}
-                detail={`${r.employee_name ?? 'Sans salarié'} : ${r.issues.join(', ')}.`}
+                detail={r.employee_id ? `${r.employee_name} : ${r.issues.join(', ').toLowerCase()}.` : `Personne n’est affecté à cette tournée${r.notes ? ` (${r.notes.replace(/\.$/, '')})` : ''}.`}
                 cta="Remplacer"
               />
             ))}
@@ -86,7 +113,10 @@ export default async function TodayPage() {
                 />
               ))}
             {d.blockedInspections.length === 0 && d.board.shifts.every((r) => r.issues.length === 0) && (
-              <p className="empty">Rien à signaler : chaque créneau du jour a un salarié disponible et un véhicule en règle.</p>
+              <div className="empty-state">
+                <strong>Tout est en ordre</strong>
+                <p>Chaque tournée du jour a un salarié disponible et un véhicule en règle.</p>
+              </div>
             )}
           </div>
         </section>
@@ -109,7 +139,7 @@ export default async function TodayPage() {
               <tbody>
                 {d.board.people.map((p) => (
                   <tr key={p.employee_id}>
-                    <td>
+                    <td className="nowrap">
                       <Link href={`/personnel/${p.employee_id}`} className="row-link">
                         {p.name}
                       </Link>
@@ -208,13 +238,24 @@ export default async function TodayPage() {
   );
 }
 
-function Kpi({ label, value, note, alert }: { label: string; value: string | number; note?: string; alert?: boolean }) {
-  return (
-    <div className={alert ? `${styles.kpi} ${styles.kpiAlert}` : styles.kpi}>
+/** Indicateur cliquable : il ouvre la page correspondante, déjà filtrée. */
+function Kpi({ label, value, note, alert, href, show = true }: { label: string; value: string | number; note?: string; alert?: boolean; href: string; show?: boolean }) {
+  const body = (
+    <>
       <span className={styles.kpiValue}>{value}</span>
       <span className={styles.kpiLabel}>{label}</span>
       {note && <span className={styles.kpiNote}>{note}</span>}
-    </div>
+    </>
+  );
+  const className = `${styles.kpi} ${alert ? styles.kpiAlert : ''}`;
+  if (!show) return <div className={className}>{body}</div>;
+  return (
+    <Link href={href} className={`${className} ${styles.kpiLink}`}>
+      {body}
+      <span className={styles.kpiGo} aria-hidden="true">
+        Voir →
+      </span>
+    </Link>
   );
 }
 

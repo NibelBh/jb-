@@ -28,7 +28,7 @@ export default async function DamagesPage(props: PageProps<'/dommages'>) {
     <>
       <PageHeader
         title="Dommages et sinistres"
-        subtitle={all ? 'Tous les dossiers.' : 'Dossiers ouverts.'}
+        subtitle={all ? 'Tous les dossiers, y compris ceux qui sont clôturés.' : 'Les dossiers en cours, du constat jusqu’à la réparation.'}
         actions={
           <>
             <Link href={all ? '/dommages' : '/dommages?tous=1'} className="btn btn-ghost">
@@ -86,7 +86,7 @@ export default async function DamagesPage(props: PageProps<'/dommages'>) {
             ))}
           </tbody>
         </table>
-        {damages.length === 0 && <p className="empty">Aucun dossier {all ? '' : 'ouvert'}.</p>}
+        {damages.length === 0 && <p className="empty">{all ? 'Aucun dommage enregistré.' : 'Aucun dossier en cours. Bonne nouvelle.'}</p>}
       </section>
     </>
   );

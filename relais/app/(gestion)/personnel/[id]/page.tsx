@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { AbsenceActions } from '@/components/AbsenceActions';
 import { ActionForm } from '@/components/ActionForm';
 import { AuditList } from '@/components/AuditList';
 import { DamageStatusBadge, ExpiryBadge } from '@/components/badges';
@@ -13,13 +14,13 @@ import { listDamages, listFines } from '@/lib/data/cases';
 import { listDocuments } from '@/lib/data/documents';
 import { currentSituation, fullName, getEmployee, listAbsences, userForEmployee } from '@/lib/data/employees';
 import { listShifts } from '@/lib/data/planning';
-import { assignmentHistory } from '@/lib/data/vehicles';
+import { assignmentHistory, getVehicle } from '@/lib/data/vehicles';
 import { addDays, daysBetween, formatDate, formatDateTime, formatWeekday, parisDate } from '@/lib/domain/dates';
 import { formatDuration, formatRange, workedMinutes } from '@/lib/domain/shifts';
 import { expiryStatus } from '@/lib/domain/documents';
 import { ABSENCE_TYPES, CONTRACT_TYPES, DAMAGE_TYPES, DRIVING_POSITIONS, EMPLOYEE_STATUSES, FINE_STATUSES, POSITIONS, labelOf } from '@/lib/domain/labels';
 import { can, canAccess } from '@/lib/domain/roles';
-import { addAbsenceAction, deleteAbsenceAction } from '../../planning/actions';
+import { addAbsenceAction } from '../../planning/actions';
 import { createDriverAccessAction, licenceCheckAction } from '../actions';
 
 export const metadata: Metadata = { title: 'Salarié' };
@@ -38,6 +39,8 @@ export default async function EmployeePage(props: PageProps<'/personnel/[id]'>) 
   const access = userForEmployee(db, ctx.orgId, employee.id);
   const absences = listAbsences(db, ctx.orgId, { from: addDays(today, -365), to: addDays(today, 365), employeeId: employee.id }).reverse();
   const situation = currentSituation(db, ctx.orgId, employee, today);
+  const vehicle = employee.vehicle_id ? getVehicle(db, ctx.orgId, employee.vehicle_id) : undefined;
+  const params = await props.searchParams;
   const upcoming = listShifts(db, ctx.orgId, { from: today, to: addDays(today, 13), employeeId: employee.id });
   const month = today.slice(0, 7);
   const monthShifts = listShifts(db, ctx.orgId, { from: `${month}-01`, to: today, employeeId: employee.id });
@@ -71,12 +74,19 @@ export default async function EmployeePage(props: PageProps<'/personnel/[id]'>) 
         actions={
           canEdit && (
             <Link href={`/personnel/${employee.id}/modifier`} className="btn btn-ghost">
-              Modifier la fiche
+              Modifier
             </Link>
           )
         }
       />
 
+      {params.enregistre === '1' && (
+        <p className="alert alert-ok" role="status" style={{ marginBottom: 12 }}>
+          Modifications enregistrées.
+          {Number(params.deplaces) > 0 && ` ${params.deplaces} planification(s) à venir passent sur ${vehicle?.plate ?? 'le nouveau véhicule'}.`}
+          {Number(params.ignores) > 0 && ` ${params.ignores} n’ont pas pu changer de véhicule (déjà pris sur les mêmes horaires) : vérifiez le planning.`}
+        </p>
+      )}
       <p className={`alert ${situation.tone === 'ok' ? 'alert-ok' : situation.tone === 'off' ? 'alert-error' : ''}`} style={{ marginBottom: 16 }}>
         Aujourd’hui : <strong>{situation.label}</strong>
         {situation.until ? ` (jusqu’au ${formatDate(situation.until)} inclus)` : ''}.{' '}
@@ -129,6 +139,8 @@ export default async function EmployeePage(props: PageProps<'/personnel/[id]'>) 
               <dd className="mono">{employee.payroll_id || 'Non renseigné'}</dd>
               <dt>Contrat</dt>
               <dd>{labelOf(CONTRACT_TYPES, employee.contract_type) || '·'}</dd>
+              <dt>Véhicule attribué</dt>
+              <dd>{vehicle ? <Link href={`/vehicules/${vehicle.id}`}>{vehicle.plate}</Link> : 'Aucun'}</dd>
               <dt>Date d’arrivée</dt>
               <dd>{formatDate(employee.hired_on) || '·'}</dd>
               {employee.left_on && (
@@ -234,11 +246,7 @@ export default async function EmployeePage(props: PageProps<'/personnel/[id]'>) 
                     {a.note ? `. ${a.note}` : ''}
                   </span>
                 </div>
-                {can(ctx.roles, 'absence.modifier') && (
-                  <ActionForm action={deleteAbsenceAction} submitLabel="Retirer" submitClassName="btn btn-ghost btn-sm" className="btn-row" confirmMessage="Retirer cette absence ?">
-                    <input type="hidden" name="absenceId" value={a.id} />
-                  </ActionForm>
-                )}
+                {can(ctx.roles, 'absence.modifier') && <AbsenceActions absence={a} />}
               </div>
             ))}
             {can(ctx.roles, 'absence.modifier') && (

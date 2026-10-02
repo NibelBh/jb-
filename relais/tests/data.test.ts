@@ -27,6 +27,7 @@ import { getVehicle, listVehicles } from '@/lib/data/vehicles';
 import { addDays, parisDate } from '@/lib/domain/dates';
 import { CHECKLIST, END_OF_DAY_PHOTOS, type InspectionAnswers, missingPhotos } from '@/lib/domain/inspection';
 import { periodBounds } from '@/lib/domain/payroll';
+import { workedMinutes } from '@/lib/domain/shifts';
 
 const today = parisDate();
 
@@ -105,6 +106,8 @@ describe('données de démonstration et règles métier', () => {
       `SELECT s.id FROM shifts s JOIN absences a ON a.employee_id = s.employee_id AND s.day BETWEEN a.start_on AND a.end_on AND a.type != 'retard'`,
     );
     expect(onLeave).toHaveLength(0);
+    // Aucun avis de contravention envoyé avant l'infraction.
+    expect(all(db, `SELECT id FROM fines WHERE notice_sent_on < substr(offense_at, 1, 10)`)).toHaveLength(0);
   });
 
   it('refuse une planification incohérente et accepte une planification correcte', () => {
@@ -233,7 +236,10 @@ describe('données de démonstration et règles métier', () => {
       last,
     )!;
     expect([lineLucas.workedDays, lineLucas.routes]).toEqual([real.days, real.routes]);
-    expect(lineLucas.hours).toBeGreaterThan(0);
+    const minutes = listShifts(db, org, { from: start, to: last, employeeId: lucas })
+      .filter((s) => s.status === 'realise')
+      .reduce((sum, s) => sum + workedMinutes(s), 0);
+    expect(lineLucas.hours).toBe(Math.round((minutes / 60) * 100) / 100);
     // Samir est en tournée mais n'a pas encore rendu son véhicule : aujourd'hui ne compte pas encore pour lui.
     const samirToday = listShifts(db, org, { from: today, to: today, employeeId: samir })[0];
     expect(samirToday.status).toBe('en_cours');

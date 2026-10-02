@@ -103,6 +103,30 @@ export function addPayrollItem(
   return null;
 }
 
+export function updatePayrollItem(db: Db, ctx: Actor, itemId: number, input: { value: number; note: string | null }): string | null {
+  const item = get<{ id: number; employee_id: number; variable: string; period: string; value: number; note: string | null }>(
+    db,
+    `SELECT id, employee_id, variable, period, value, note FROM payroll_items WHERE id = ? AND org_id = ?`,
+    itemId,
+    ctx.orgId,
+  );
+  if (!item) return 'Élément introuvable.';
+  if (!Number.isFinite(input.value) || input.value === 0) return 'Indiquez une valeur différente de zéro.';
+  if (item.variable === 'autre' && !input.note) return 'Précisez la nature de l’élément dans le commentaire.';
+  if (item.value === input.value && item.note === input.note) return null;
+  const employee = getEmployee(db, ctx.orgId, item.employee_id);
+  transaction(db, () => {
+    run(db, `UPDATE payroll_items SET value = ?, note = ? WHERE id = ? AND org_id = ?`, input.value, input.note, item.id, ctx.orgId);
+    logAudit(db, ctx, {
+      action: 'paie',
+      entityType: 'employee',
+      entityId: item.employee_id,
+      summary: `Élément de paie modifié pour ${employee ? fullName(employee) : 'un salarié'} (${periodLabel(item.period)}) : ${isPayrollVariable(item.variable) ? variableInfo(item.variable).label : item.variable}.`,
+    });
+  });
+  return null;
+}
+
 export function deletePayrollItem(db: Db, ctx: Actor, itemId: number): void {
   const item = get<{ id: number; employee_id: number; variable: string; period: string }>(
     db,

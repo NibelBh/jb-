@@ -8,50 +8,60 @@
 .kpi {
   position: relative;
   display: grid;
+  align-content: start;
   gap: 2px;
-  padding: 14px 16px 14px 20px;
+  padding: 14px 16px;
   background: var(--white);
   border: 1px solid var(--grey-200);
   border-radius: var(--radius);
-  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
 }
 
-.kpi::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 6px;
-  background: var(--black);
+.kpiLink {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.kpiLink:hover {
+  border-color: var(--grey-400);
+  box-shadow: 0 2px 10px -4px rgb(11 11 12 / 0.2);
 }
 
 .kpiAlert {
-  border-color: var(--black);
+  border-color: #f2c4bf;
+  background: #fffafa;
 }
 
-.kpiAlert::before {
-  width: 8px;
-  background: var(--stripes);
+.kpiAlert .kpiValue {
+  color: var(--red-ink);
 }
 
 .kpiValue {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 900;
-  font-size: 2rem;
-  line-height: 1;
+  font-weight: 700;
+  font-size: 1.75rem;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
 
 .kpiLabel {
-  font-size: 0.82rem;
-  font-weight: 700;
+  font-size: 0.86rem;
+  font-weight: 600;
 }
 
 .kpiNote {
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   color: var(--grey-500);
+}
+
+.kpiGo {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--grey-500);
+}
+
+.kpiLink:hover .kpiGo {
+  color: var(--ink-900);
 }
 
 .grid {
@@ -68,7 +78,7 @@
   gap: 12px;
   padding: 10px 12px;
   border-radius: var(--radius-sm);
-  border-left: 6px solid;
+  border-left: 4px solid;
   background: var(--grey-100);
 }
 
@@ -78,7 +88,7 @@
 }
 
 .itemYellow {
-  border-left-color: var(--yellow);
+  border-left-color: var(--yellow-strong);
   background: var(--yellow-wash);
 }
 
@@ -93,5 +103,5 @@
 }
 
 .line:hover {
-  background: var(--yellow-wash);
+  background: var(--grey-100);
 }

@@ -28,15 +28,20 @@ export type VehicleListRow = VehicleRow & {
   driver_name: string | null;
   driver_id: number | null;
   assignment_started_at: string | null;
+  /** Salarié à qui le véhicule est attribué. */
+  holder_id: number | null;
+  holder_name: string | null;
 };
 
 export function listVehicles(db: Db, orgId: number, opts: { includeRetired?: boolean } = {}): VehicleListRow[] {
   return all<VehicleListRow>(
     db,
-    `SELECT v.*, e.first_name || ' ' || e.last_name AS driver_name, e.id AS driver_id, a.started_at AS assignment_started_at
+    `SELECT v.*, e.first_name || ' ' || e.last_name AS driver_name, e.id AS driver_id, a.started_at AS assignment_started_at,
+            h.id AS holder_id, h.first_name || ' ' || h.last_name AS holder_name
        FROM vehicles v
        LEFT JOIN assignments a ON a.vehicle_id = v.id AND a.org_id = v.org_id AND a.ended_at IS NULL
        LEFT JOIN employees e ON e.id = a.employee_id
+       LEFT JOIN employees h ON h.vehicle_id = v.id AND h.org_id = v.org_id
       WHERE v.org_id = ? ${opts.includeRetired ? '' : `AND v.status != 'sorti'`}
       ORDER BY v.plate`,
     orgId,
@@ -125,4 +130,14 @@ export function kmSince(db: Db, orgId: number, since: string): number {
     since,
   );
   return row?.km ?? 0;
+}
+
+/** Salarié à qui ce véhicule est attribué, s'il y en a un. */
+export function vehicleHolder(db: Db, orgId: number, vehicleId: number): { id: number; name: string } | undefined {
+  return get<{ id: number; name: string }>(
+    db,
+    `SELECT id, first_name || ' ' || last_name AS name FROM employees WHERE org_id = ? AND vehicle_id = ?`,
+    orgId,
+    vehicleId,
+  );
 }

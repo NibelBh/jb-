@@ -434,6 +434,12 @@ const MIGRATIONS: string[] = [
 
   ALTER TABLE users ADD COLUMN deleted_at TEXT;
   `,
+  // 4 : véhicule attribué à un salarié (un véhicule n'est attribué qu'à une personne), journal paginé.
+  `
+  ALTER TABLE employees ADD COLUMN vehicle_id INTEGER REFERENCES vehicles(id);
+  CREATE UNIQUE INDEX employees_vehicle ON employees(org_id, vehicle_id) WHERE vehicle_id IS NOT NULL;
+  CREATE INDEX audit_org ON audit_log(org_id, id);
+  `,
 ];
 
 export function openDatabase(location: string): Db {

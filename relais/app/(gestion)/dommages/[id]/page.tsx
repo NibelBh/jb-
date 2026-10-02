@@ -13,7 +13,7 @@ import { formatDateTime } from '@/lib/domain/dates';
 import { DAMAGE_STATUSES, DAMAGE_TYPES, labelOf } from '@/lib/domain/labels';
 import { can } from '@/lib/domain/roles';
 import { parseZones, zonesLabel } from '@/lib/domain/zones';
-import { attachToDamageAction, changeDamageStatusAction, setDamageCostsAction } from '../actions';
+import { addDamagePhotosAction, attachToDamageAction, changeDamageStatusAction, removeDamagePhotoAction, setDamageCostsAction } from '../actions';
 
 export const metadata: Metadata = { title: 'Dossier dommage' };
 
@@ -24,6 +24,7 @@ function eurosInput(cents: number | null) {
 export default async function DamagePage(props: PageProps<'/dommages/[id]'>) {
   const ctx = await requireModule('dommages');
   const damageId = Number((await props.params).id);
+  const params = await props.searchParams;
   const db = getDb();
   const damage = Number.isInteger(damageId) ? getDamage(db, ctx.orgId, damageId) : undefined;
   if (!damage) notFound();
@@ -45,7 +46,19 @@ export default async function DamagePage(props: PageProps<'/dommages/[id]'>) {
           </>
         }
         back={{ href: '/dommages', label: 'Dommages' }}
+        actions={
+          editable && (
+            <Link href={`/dommages/${damage.id}/modifier`} className="btn btn-ghost">
+              Modifier le dossier
+            </Link>
+          )
+        }
       />
+      {params.enregistre === '1' && (
+        <p className="alert alert-ok" role="status" style={{ marginBottom: 16 }}>
+          Modifications enregistrées.
+        </p>
+      )}
 
       {damage.injured === 1 && (
         <p className="alert alert-error" style={{ marginBottom: 16 }}>
@@ -88,15 +101,44 @@ export default async function DamagePage(props: PageProps<'/dommages/[id]'>) {
               </div>
             )}
             <p style={{ whiteSpace: 'pre-wrap' }}>{damage.description}</p>
-            {photos.length > 0 && (
+            {photos.length > 0 ? (
               <div className="photos">
                 {photos.map((fileId) => (
-                  <a key={fileId} href={`/api/fichiers/${fileId}`} target="_blank" rel="noreferrer">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={`/api/fichiers/${fileId}`} alt="Photo du dommage" loading="lazy" />
-                  </a>
+                  <figure key={fileId} className="photo-card">
+                    <a href={`/api/fichiers/${fileId}`} target="_blank" rel="noreferrer">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={`/api/fichiers/${fileId}`} alt="Photo du dommage" loading="lazy" />
+                    </a>
+                    {editable && (
+                      <figcaption>
+                        <details className="disclosure small">
+                          <summary>Remplacer</summary>
+                          <ActionForm action={addDamagePhotosAction} submitLabel="Remplacer" submitClassName="btn btn-sm" resetOnSuccess>
+                            <input type="hidden" name="damageId" value={damage.id} />
+                            <input type="hidden" name="replaceId" value={fileId} />
+                            <input name="photos" type="file" accept="image/jpeg,image/png,image/webp" className="input" required aria-label="Nouvelle photo" />
+                          </ActionForm>
+                        </details>
+                        <ActionForm action={removeDamagePhotoAction} submitLabel="Retirer" submitClassName="btn btn-ghost btn-sm" className="btn-row" confirmMessage="Retirer cette photo du dossier ?">
+                          <input type="hidden" name="damageId" value={damage.id} />
+                          <input type="hidden" name="fileId" value={fileId} />
+                        </ActionForm>
+                      </figcaption>
+                    )}
+                  </figure>
                 ))}
               </div>
+            ) : (
+              <p className="muted small">Aucune photo pour l’instant.</p>
+            )}
+            {editable && (
+              <details className="disclosure">
+                <summary>Ajouter des photos</summary>
+                <ActionForm action={addDamagePhotosAction} submitLabel="Ajouter" resetOnSuccess>
+                  <input type="hidden" name="damageId" value={damage.id} />
+                  <input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple className="input" required aria-label="Photos" />
+                </ActionForm>
+              </details>
             )}
           </div>
         </section>
